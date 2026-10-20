@@ -1115,3 +1115,32 @@ describe('failure recovery: retry budget and journal rotation', () => {
     assert.equal((statSync(journalPath).mode & 0o777), 0o600)
   })
 })
+
+describe('classification: file paths are addresses, not intent', () => {
+  it('does not read a directory named "profiles" as performance profiling', () => {
+    const task = 'Reply with only the exact value of the `name` field in /Users/me/.dsh/profiles/desktop/node_modules/pkg/package.json.'
+    // Before path stripping this matched the debugging `profil(e|es|ed|ing)` rule.
+    assert.notEqual(classifyTask(task).intent, 'debugging')
+  })
+
+  it('still reads a real profiling request as debugging', () => {
+    assert.equal(classifyTask('Profile the CPU while the scheduler runs').intent, 'debugging')
+  })
+
+  it('still reads a real fix request as debugging, path or not', () => {
+    assert.equal(classifyTask('Fix src/error-handler.ts so it stops swallowing failures').intent, 'debugging')
+  })
+
+  it('keeps a review instruction review when the diff is named by path', () => {
+    assert.equal(classifyTask('Review /Users/me/proj/src/app.ts and find blind spots').intent, 'review')
+  })
+
+  it('keeps a mechanical rename mechanical when the file is named by path', () => {
+    assert.equal(classifyTask('Rename the constant in ./lib/util.ts').intent, 'mechanical')
+  })
+
+  it('does not strip a provider/model id down to a path', () => {
+    // A model id has one separator and no leading slash; it is not a filesystem path.
+    assert.equal(classifyTask('Review this diff against provider/model').intent, 'review')
+  })
+})
