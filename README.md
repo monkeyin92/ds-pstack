@@ -102,4 +102,4 @@ pstack is MIT licensed by Lauren Tan. Its license is kept in [LICENSE.pstack](LI
 node --test "test/*.test.js"
 ```
 
-91 tests cover classification and its positional weighting, delegate-preamble stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `tsc` and `bash -n`.
+93 tests cover classification and its positional weighting, delegate-preamble stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `tsc` and `bash -n`.

@@ -10,7 +10,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -1065,5 +1065,53 @@ describe('role pins: category spread and conflicts (M2)', () => {
     const active = events.find(event => event.event === 'active')
     assert.equal(active.pinConflicts.length, 1)
     assert.equal(active.pinConflicts[0].intent, 'review')
+  })
+})
+
+describe('failure recovery: retry budget and journal rotation', () => {
+  const pool = [{ provider: 'magpie', model: 'group/deepseek-v4-1-flash' }, { provider: 'magpie', model: 'group/claude-opus-5-5' }]
+  const catalogue = [
+    { provider: 'magpie', model: 'group/deepseek-v4-1-flash', efforts: ['low', 'high', 'max'] },
+    { provider: 'magpie', model: 'group/claude-opus-5-5', efforts: ['low', 'medium', 'high', 'max'] },
+  ]
+  const base = { provider: 'magpie', model: 'group/deepseek-v4-1-flash', reasoningEffort: 'max' }
+
+  it('stops retrying after maxRouteRetries instead of looping', async () => {
+    const { ctx, journalPath } = routed(pool, catalogue, { config: { maxRouteRetries: 1 } })
+    const child = fakeAgent('rt', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    const fail = () => ctx.waterfall('agent/request-error', {
+      agent: child, turn: 1, step: 1, provider: 'magpie',
+      failure: { code: 'AUTH', status: 401 }, signal: new AbortController().signal,
+    }, undefined)
+    assert.deepEqual(await fail(), { kind: 'retry' })
+    // The loop re-issues the request after a retry, which produces a fresh
+    // decision; the next failure of that route is the one that exhausts the
+    // budget. Modelling the real loop matters: without the intermediate
+    // request there is no cached route to attribute a failure to.
+    await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    // Budget spent: this failure must not ask for another retry.
+    assert.equal(await fail(), undefined)
+    const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    assert.ok(events.some(event => event.event === 'skip' && event.reason === 'route-retries-exhausted'))
+  })
+
+  it('restarts the journal instead of growing past its cap', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-rotate-'))
+    const journalPath = join(dir, 'j.jsonl')
+    // A pre-existing oversized journal must be replaced, not appended to forever.
+    writeFileSync(journalPath, 'x'.repeat(4 * 1024 * 1024 + 16))
+    const ctx = fakeContext({
+      services: {
+        subagentModelSelection: { current: () => ({ enabled: true, allowedModels: pool }) },
+        llm: fakeLlm(catalogue),
+        agents: { get: () => undefined },
+      },
+    })
+    applyRouter(ctx, { rolesPath: join(dir, 'none.json'), logPath: journalPath })
+    const size = readFileSync(journalPath, 'utf8').length
+    assert.ok(size < 4 * 1024 * 1024, `journal should have restarted, size ${size}`)
+    // And the file stayed owner-only.
+    assert.equal((statSync(journalPath).mode & 0o777), 0o600)
   })
 })
