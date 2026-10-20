@@ -4,7 +4,7 @@
 
 This port keeps pstack's playbooks, principles, and prose rules. Two things change, because DeepSeek Harness works differently from Cursor.
 
-**The skills are the same skills.** All 56 of them, in the `/` menu under their pstack names. `/poteto-mode` runs the playbook, `/interrogate` runs the adversarial review, `/how` explains a subsystem, and the 30 `principle-*` skills carry the reasoning pstack is built on.
+**The skills are the same skills.** All 56 of them, in the `/` menu under their pstack names. `/poteto-mode` runs the playbook, `/interrogate` runs the adversarial review, `/how` explains a subsystem, and the 24 `principle-*` skills carry the reasoning pstack is built on.
 
 **The models are chosen for you, out of your own list.** pstack on Cursor names a model slug per role. ds-pstack cannot do that, because a Harness profile's models are whatever you configured and checked. So the router reads the child's task, decides what kind of work it is, and picks the best route from the models you checked for subagents. You never name a model, and neither does a skill.
 
@@ -74,8 +74,8 @@ Run `/setup-pstack`. It reads your checked pool, asks for a budget, and writes `
 {
   "budget": "large",
   "intents": {
-    "feature": "magpie/group/deepseek-v4-1-flash",
-    "interrogate reviewers": "magpie/group/claude-opus-5-5 @ high"
+    "feature": "example-provider/example-model",
+    "interrogate reviewers": "example-provider/stronger-model @ high"
   }
 }
 ```
@@ -102,4 +102,4 @@ pstack is MIT licensed by Lauren Tan. Its license is kept in [LICENSE.pstack](LI
 node --test "test/*.test.js"
 ```
 
-76 tests cover classification and its positional weighting, effort mapping, model ranking, pool enforcement, pin handling, fork protection, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies.
+91 tests cover classification and its positional weighting, delegate-preamble stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `tsc` and `bash -n`.

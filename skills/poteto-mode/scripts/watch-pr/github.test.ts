@@ -433,4 +433,66 @@ describe("context and stack discovery", () => {
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([41, 42, 43]);
   });
+
+  it("ignores a fork PR whose head and base share a ref instead of looping", () => {
+    // A fork's main -> main pull request makes `main` both the base of this PR
+    // and the head of another one. Walking down used to follow that edge back
+    // into itself forever.
+    const ordered = orderStack(context, [
+      { number: context.number, headRefName: "feature", baseRefName: "main" },
+      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+    ]);
+    expect(ordered.map((item) => Number(item.number))).toEqual([42]);
+  });
+
+  it("breaks a base cycle in the downward walk", () => {
+    const ordered = orderStack(context, [
+      { number: context.number, headRefName: "a", baseRefName: "b" },
+      { number: parsePrNumber(7), headRefName: "b", baseRefName: "a" },
+    ]);
+    const numbers = ordered.map((item) => Number(item.number));
+    expect(numbers).toEqual([7, 42]);
+    expect(new Set(numbers).size).toBe(numbers.length);
+  });
+
+  it("never attaches a head-equals-base PR as a stack child", () => {
+    const ordered = orderStack(context, [
+      { number: context.number, headRefName: "main", baseRefName: "trunk" },
+      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+    ]);
+    expect(ordered.map((item) => Number(item.number))).toEqual([42]);
+  });
+
+  it("returns from the fork scenario instead of hanging", async () => {
+    // The regression above is only meaningful if orderStack terminates. A
+    // synchronous infinite loop cannot be interrupted in-process, so run the
+    // call in a child with a hard timeout: the unfixed code never returns.
+    const script = `
+      import { orderStack } from ${JSON.stringify(
+        new URL("./github.ts", import.meta.url).href
+      )};
+      import { parsePrNumber } from ${JSON.stringify(
+        new URL("./types.ts", import.meta.url).href
+      )};
+      const ordered = orderStack(
+        { owner: "o", repo: "r", number: parsePrNumber(10) },
+        [
+          { number: parsePrNumber(10), headRefName: "feature", baseRefName: "main" },
+          { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+        ]
+      );
+      console.log(ordered.map((item) => Number(item.number)).join(","));
+    `;
+    const child = Bun.spawn([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10_000,
+    });
+    const [code, stdout] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+    ]);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe("10");
+  }, 15_000);
 });

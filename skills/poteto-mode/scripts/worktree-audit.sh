@@ -10,6 +10,12 @@
 #   Without it the base is origin/HEAD, then origin/main, then origin/master.
 #   origin/HEAD is the remote's default branch, not necessarily the branch PRs
 #   merge into; pass -b when they differ.
+#
+# BUCKET=safe requires all of: no tracked edits, no open/draft PR, no recent
+# chat, a merged state (ancestry or PR merged), and no commits that exist only
+# locally. A branch that is ahead of its remote or has no remote ref is never
+# safe, even when merged: the merge may not have been the one that counted.
+# Those rows get BUCKET=review plus a warn line naming the reason.
 set -u
 
 base=""
@@ -22,13 +28,53 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
+prs=$(mktemp) || exit 1
+wts=$(mktemp) || exit 1
+raw_wts=$(mktemp) || exit 1
+cleanup() { rm -f "$prs" "$wts" "$raw_wts"; }
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+
+# Portable file mtime in epoch seconds: GNU first, then BSD.
+file_mtime() {
+	stat -c %Y "$1" 2>/dev/null && return 0
+	stat -f %m "$1" 2>/dev/null && return 0
+	return 1
+}
+
+# Portable epoch -> YYYY-MM-DD: GNU date first, then BSD.
+format_date() {
+	date -d "@$1" '+%Y-%m-%d' 2>/dev/null && return 0
+	date -r "$1" '+%Y-%m-%d' 2>/dev/null
+}
+
 repo="${1:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -z "$repo" ] && { echo "not in a git repo; pass a repo path" >&2; exit 1; }
 cd "$repo" || exit 1
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "error: not a git repo: $repo" >&2; exit 1; }
 
+# Worktree paths are NUL-separated so names with spaces or tabs survive.
 # Main worktree is the first entry; everything else is a candidate.
-main_wt=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+# Older Git without -z falls back to a line-based read, which loses paths that
+# contain newlines but keeps spaces intact.
+if ! git worktree list --porcelain -z > "$raw_wts" 2>/dev/null; then
+	git worktree list --porcelain 2>/dev/null \
+		| awk '/^worktree /{printf "%s%c", $0, 0}' > "$raw_wts"
+fi
+main_wt=""
+while IFS= read -r -d '' field; do
+	case "$field" in
+	"worktree "*)
+		wt_path="${field#worktree }"
+		if [ -z "$main_wt" ]; then
+			main_wt="$wt_path"
+		else
+			printf '%s\0' "$wt_path" >> "$wts"
+		fi ;;
+	esac
+done < "$raw_wts"
+[ -n "$main_wt" ] || { echo "error: git worktree list returned nothing" >&2; exit 1; }
 
 if [ -z "$base" ]; then
 	for cand in "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)" origin/main origin/master; do
@@ -50,14 +96,14 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1 || { echo "error
 # PR state by branch, fetched once as [{number, state, head}] with a lowercase
 # state. Origin when its CLI can read this repo's PRs, otherwise gh. Empty when
 # neither can.
-prs=$(mktemp)
+: > "$prs"
 if command -v origin >/dev/null 2>&1 \
 	&& raw=$(origin pr list --author "@me" --state all --limit 1000 \
 		--json number,status,headRef 2>/dev/null); then
-	printf '%s' "$raw" | jq '[.[] | {number, state: .status, head: .headRef}]' > "$prs" 2>/dev/null
+	printf '%s' "$raw" | jq '[.[] | {number, state: ((.status // "unknown") | ascii_downcase), head: .headRef}]' > "$prs" 2>/dev/null
 elif raw=$(gh pr list --author "@me" --state all --limit 1000 \
 	--json number,state,headRefName 2>/dev/null); then
-	printf '%s' "$raw" | jq '[.[] | {number, state: (.state | ascii_downcase), head: .headRefName}]' > "$prs" 2>/dev/null
+	printf '%s' "$raw" | jq '[.[] | {number, state: ((.state // "unknown") | ascii_downcase), head: .headRefName}]' > "$prs" 2>/dev/null
 fi
 [ -s "$prs" ] || echo "[]" > "$prs"
 
@@ -69,17 +115,25 @@ now=$(date +%s)
 echo "# base: $base"
 printf "SIZE\tAGE\tMERGED\tDIRTY\tREMOTE\tPR\tLAST_CHAT\tBUCKET\tWORKTREE\n"
 
-git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+while IFS= read -r -d '' wt; do
 	[ "$wt" = "$main_wt" ] && continue
 
-	size=$(du -sh "$wt" 2>/dev/null | awk '{print $1}')
+	size=$(du -sh "$wt" 2>/dev/null | awk 'NR == 1 {print $1}')
+	[ -n "$size" ] || size="?"
 	head=$(git -C "$wt" rev-parse HEAD 2>/dev/null)
 	head_ts=$(git -C "$wt" log -1 --format='%ct' HEAD 2>/dev/null || echo 0)
-	age=$([ "$head_ts" -gt 0 ] 2>/dev/null && echo "$(( (now - head_ts) / 86400 ))d" || echo "?")
+	age="?"
+	if [ -n "$head_ts" ] && [ "$head_ts" -gt 0 ] 2>/dev/null; then
+		age="$(( (now - head_ts) / 86400 ))d"
+	fi
 
 	# Squash-merged branches are not ancestors of the base, so PR state is the
 	# real signal; merge-base only catches fast-forward/rebase merges.
-	git merge-base --is-ancestor "$head" "$base" 2>/dev/null && merged=YES || merged=no
+	if [ -n "$head" ] && git merge-base --is-ancestor "$head" "$base" 2>/dev/null; then
+		merged=YES
+	else
+		merged=no
+	fi
 
 	# Distinguish real WIP (tracked edits) from disposable untracked scratch.
 	porcelain=$(git -C "$wt" status --porcelain 2>/dev/null)
@@ -89,15 +143,46 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	else dirty="scratch:$(printf '%s\n' "$porcelain" | grep -c '^??')"; fi
 
 	branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
-	if [ -z "$branch" ]; then remote=detached
+	unpushed=no
+	if [ -z "$branch" ]; then
+		remote=detached
 	elif git -C "$wt" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-		[ "$(git -C "$wt" rev-parse "origin/$branch" 2>/dev/null)" = "$head" ] \
-			&& remote=pushed \
-			|| remote="ahead$(git -C "$wt" rev-list --count "origin/$branch..HEAD" 2>/dev/null)"
-	else remote=no-remote; fi
+		ahead=$(git -C "$wt" rev-list --count "origin/$branch..HEAD" 2>/dev/null)
+		behind=$(git -C "$wt" rev-list --count "HEAD..origin/$branch" 2>/dev/null)
+		case "$ahead" in
+		""|*[!0-9]*) remote=unknown; unpushed=yes ;;
+		0) case "$behind" in
+			0) remote=pushed ;;
+			""|*[!0-9]*) remote=unknown ;;
+			*) remote="behind:$behind" ;;
+			esac ;;
+		*) remote="ahead:$ahead"; unpushed=yes ;;
+		esac
+	else
+		remote=no-remote
+		unpushed=yes
+	fi
 
-	pr=$([ -n "$branch" ] && jq -r --arg b "$branch" \
-		'.[] | select(.head==$b) | "#\(.number)/\(.state)"' "$prs" 2>/dev/null | head -1)
+	pr=""
+	pr_state=""
+	if [ -n "$branch" ]; then
+		# One branch can have several PRs over its life. Report the most
+		# actionable state first (a live PR hides nothing by being listed
+		# under an older merged one) and the newest number within a state.
+		pr=$(jq -r --arg b "$branch" '
+			[.[] | select(.head == $b)]
+			| sort_by((if .state == "open" or .state == "draft" then 0
+				elif .state == "merged" then 1
+				else 2 end), -(.number))
+			| .[0]
+			| if . == null then "" else "#\(.number)/\(.state)" end
+		' "$prs" 2>/dev/null)
+	fi
+	case "$pr" in
+	*"/merged") pr_state=merged ;;
+	*"/open"|*"/draft") pr_state=open ;;
+	*"/closed") pr_state=closed ;;
+	esac
 	[ -z "$pr" ] && pr="-"
 
 	# Most recent session that operated in this worktree. Match path
@@ -106,28 +191,56 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	# walk newest first so the common case stops after a few files.
 	last="-"; last_ts=0
 	if [ -d "$sessions" ] && command -v zstd >/dev/null 2>&1; then
-		f=$(find "$sessions" -name 'session.v4.jsonl.zstd' -type f 2>/dev/null \
-			| xargs stat -f '%m %N' 2>/dev/null | sort -rn \
-			| while read -r ts file; do
+		f=$(find "$sessions" -name 'session.v4.jsonl.zstd' -type f -print0 2>/dev/null \
+			| while IFS= read -r -d '' file; do
+				ts=$(file_mtime "$file" 2>/dev/null) || continue
+				printf '%s\t%s\n' "$ts" "$file"
+			done | sort -rn \
+			| while IFS="$(printf '\t')" read -r ts file; do
 				if zstd -dc "$file" 2>/dev/null | grep -qF -e "${wt}/" -e "${wt}\""; then
-					printf '%s %s\n' "$ts" "$file"; break
+					printf '%s\t%s\n' "$ts" "$file"; break
 				fi
 			done | head -1)
-		if [ -n "$f" ]; then last_ts=$(echo "$f" | awk '{print $1}')
-			last=$(date -r "$last_ts" '+%Y-%m-%d' 2>/dev/null); fi
+		if [ -n "$f" ]; then
+			last_ts=$(printf '%s' "$f" | cut -f1)
+			case "$last_ts" in ""|*[!0-9]*) last_ts=0 ;; esac
+			if [ "$last_ts" -gt 0 ] 2>/dev/null; then
+				last=$(format_date "$last_ts" 2>/dev/null)
+				[ -n "$last" ] || last="-"
+			fi
+		fi
 	fi
-	recent=$([ "$last_ts" -gt 0 ] 2>/dev/null && [ $(( (now - last_ts) / 86400 )) -le 4 ] && echo yes || echo no)
+	recent=no
+	if [ "$last_ts" -gt 0 ] 2>/dev/null && [ $(( (now - last_ts) / 86400 )) -le 4 ]; then
+		recent=yes
+	fi
 
-	case "$dirty" in wip:*) bucket=hold-wip ;; *)
-		case "$pr" in */open|*/draft) bucket=hold-open-pr ;; *)
-			if [ "$recent" = yes ]; then bucket=verify-recent-chat
-			elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
-			else bucket=review; fi ;;
-		esac ;;
+	# The merged state is either ancestry or a merged PR; a PR that was closed
+	# without merging proves nothing and is not enough to release anything.
+	released=no
+	if [ "$merged" = YES ] || [ "$pr_state" = merged ]; then
+		released=yes
+	fi
+
+	case "$dirty" in
+	wip:*) bucket=hold-wip ;;
+	*)
+		if [ "$pr_state" = open ]; then
+			bucket=hold-open-pr
+		elif [ "$recent" = yes ]; then
+			bucket=verify-recent-chat
+		elif [ "$released" = yes ] && [ "$unpushed" = no ]; then
+			bucket=safe
+		else
+			bucket=review
+			if [ "$unpushed" = yes ]; then
+				printf 'warn: not safe: %s has commits only on this machine (remote=%s)\n' "$wt" "$remote" >&2
+			elif [ "$pr_state" = closed ]; then
+				printf 'warn: not safe: %s has PR %s closed without merging\n' "$wt" "$pr" >&2
+			fi
+		fi ;;
 	esac
 
 	printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
 		"$size" "$age" "$merged" "$dirty" "$remote" "$pr" "$last" "$bucket" "$wt"
-done | sort -t$'\t' -k1,1 -rh
-
-rm -f "$prs"
+done < "$wts" | sort -t"$(printf '\t')" -k1,1 -rh

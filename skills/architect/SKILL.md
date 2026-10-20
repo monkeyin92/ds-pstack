@@ -26,13 +26,13 @@ Skip Phase A only when the work is genuinely greenfield with no surrounding syst
 
 ## Phase B: Sketch
 
-Read `<pstack>/arena/SKILL.md` and follow it with the design-sketch task and the Phase A grounding artifacts. Pass `references/runner-prompt.md` as each runner's prompt.
+Read `<pstack>/arena/SKILL.md` and follow it with the design-sketch task and the Phase A grounding artifacts. Pass `<pstack>/architect/references/runner-prompt.md` as each runner's prompt.
 
 The runners take the `architect runners` role, in place of `arena runners`. The ds-pstack router chooses each runner's route from the models checked in Settings, Subagent model selection, so never pass `provider`, `model`, or `reasoning_effort` on a runner spawn. The rest of the runner rules are the **arena** skill's Phase A.
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. This is the **exhaust-the-design-space** principle skill made concrete. Whole-shape alternatives, not point fixes inside one shape.
 
-Screen every candidate against [`references/design-red-flags.md`](references/design-red-flags.md) before synthesis. Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Prefer the design where a change that looks right from one file is right for the whole repo.
+Screen every candidate against [`<pstack>/architect/references/design-red-flags.md`](<pstack>/architect/references/design-red-flags.md) before synthesis. Assume the next contributor is an agent that sees only the files it opened, copies the nearest example, and takes the shortest path that compiles. Prefer the design where a change that looks right from one file is right for the whole repo.
 
 Compare viable candidates on interface depth. Prefer the design that hides more complexity behind a smaller, simpler public surface. A rich interface can keep call chains short by concentrating capability instead of scattering it across layers.
 
@@ -76,4 +76,4 @@ When you scrap:
 
 ## Outputs
 
-The caller's usage is written first and the type sketch derived from it. One file with new types and signatures for small changes. Module map plus type definitions for larger work. The rationale ships alongside, shaped per `references/rationale-template.md`, including the usage sketch and the synthesis decision.
+The caller's usage is written first and the type sketch derived from it. One file with new types and signatures for small changes. Module map plus type definitions for larger work. The rationale ships alongside, shaped per `<pstack>/architect/references/rationale-template.md`, including the usage sketch and the synthesis decision.

@@ -30,9 +30,9 @@ A fresh `subagent` does not see this conversation, so each brief stands alone. G
 
 | Lens | Role | Prompt template |
 |---|---|---|
-| Judgment | `reflect judgment` | `references/judgment-reviewer.md` |
-| Tooling | `reflect tooling` | `references/tooling-reviewer.md` |
-| Divergent | `reflect judgment` | `references/divergent-reviewer.md` |
+| Judgment | `reflect judgment` | `<pstack>/reflect/references/judgment-reviewer.md` |
+| Tooling | `reflect tooling` | `<pstack>/reflect/references/tooling-reviewer.md` |
+| Divergent | `reflect judgment` | `<pstack>/reflect/references/divergent-reviewer.md` |
 
 Three lenses, three seats, one reviewer each. The judgment and divergent lenses read the same judgment role because that is the work they do, not because they share a model: the router routes each child separately, so their routes can still differ.
 
@@ -40,7 +40,7 @@ Pass each template verbatim, substituting the transcript path or digest where ma
 
 ## 3. Synthesize
 
-One `subagent` call on the `reflect judgment` role, with its full tool surface so it can spot-verify citations through MCP, and "do not edit files" in the brief. Never pass `provider`, `model`, or `reasoning_effort`. Give it the `<pstack>` base directory and pass `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. It returns an Accepted / Rejected / Backlog list.
+One `subagent` call on the `reflect judgment` role, with its full tool surface so it can spot-verify citations through MCP, and "do not edit files" in the brief. Never pass `provider`, `model`, or `reasoning_effort`. Give it the `<pstack>` base directory and pass `<pstack>/reflect/references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. It returns an Accepted / Rejected / Backlog list.
 
 ## 4. Structural enforcement check
 

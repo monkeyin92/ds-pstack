@@ -10,24 +10,24 @@ Explore the codebase to answer "how does X work?" questions. Produce architectur
 
 Every spawn is a `subagent` whose brief says "do not edit files"; check `git status` afterward. Explorers fill the `how explorer` role and explainers fill the `how explainer` role. The ds-pstack router chooses each child's route from the models checked in Settings, Subagent model selection. Never pass `provider`, `model`, or `reasoning_effort` on a spawn: doing so opts that child out of routing. Pick each subagent's reasoning level by choosing its role and letting the router apply the budget.
 
-A fresh `subagent` does not see this conversation, so every brief is self-contained. Give it the `<pstack>` base directory this skill reported so it can read `references/explorer-prompt.md` or `references/explainer-prompt.md` itself.
+A fresh `subagent` does not see this conversation, so every brief is self-contained. Give it the `<pstack>` base directory this skill reported so it can read `<pstack>/how/references/explorer-prompt.md` or `<pstack>/how/references/explainer-prompt.md` itself.
 
 ## 1. Assess complexity
 
 If the scope is ambiguous, state your interpretation and explore. The user can redirect.
 
-- **Simple** (a single module, a small utility, a narrow question such as "how does function X work"): no explorers. Spawn one explainer that explores and explains in one pass, built from `references/explainer-prompt.md` without the explorer-findings section. Go to step 4.
+- **Simple** (a single module, a small utility, a narrow question such as "how does function X work"): no explorers. Spawn one explainer that explores and explains in one pass, built from `<pstack>/how/references/explainer-prompt.md` without the explorer-findings section. Go to step 4.
 - **Complex** (a subsystem spanning multiple files or services, a cross-cutting feature, a full architectural overview): go to step 2.
 
 When in doubt, take the simple path.
 
 ## 2. Explore (complex only)
 
-Decompose the question into 2 to 4 angles, each a distinct slice of the subsystem. Spawn all explorers in a single message, each with `references/explorer-prompt.md` and its angle filled in.
+Decompose the question into 2 to 4 angles, each a distinct slice of the subsystem. Spawn all explorers in a single message, each with `<pstack>/how/references/explorer-prompt.md` and its angle filled in.
 
 ## 3. Synthesize (complex only)
 
-Once all explorers have returned, spawn one explainer with `references/explainer-prompt.md` and every explorer's findings filled in.
+Once all explorers have returned, spawn one explainer with `<pstack>/how/references/explainer-prompt.md` and every explorer's findings filled in.
 
 ## 4. Present
 
@@ -35,4 +35,4 @@ Present the explainer's output. Light edits for clarity or context from the conv
 
 ## Output format
 
-The explanation uses the sections defined in `references/explainer-prompt.md`, dropping any that do not apply: Overview, Key Concepts, How It Works, Where Things Live, Gotchas.
+The explanation uses the sections defined in `<pstack>/how/references/explainer-prompt.md`, dropping any that do not apply: Overview, Key Concepts, How It Works, Where Things Live, Gotchas.

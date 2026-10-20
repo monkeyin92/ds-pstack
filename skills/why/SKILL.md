@@ -14,7 +14,7 @@ Every spawn uses an ordinary `subagent` with its full tool surface, because inve
 
 ## Operating Posture
 
-Operate as a **careful, cautious, and precise investigator**. Be honest about what you know vs what you're inferring. Read `references/epistemics.md` for the full confidence framework and phrasing guide. The synthesizer must follow it.
+Operate as a **careful, cautious, and precise investigator**. Be honest about what you know vs what you're inferring. Read `<pstack>/why/references/epistemics.md` for the full confidence framework and phrasing guide. The synthesizer must follow it.
 
 ## Step 1. Understand the Target and the Question
 
@@ -48,9 +48,9 @@ Source control is always available through git and `gh`. For the other six, clas
 
 Spawn one investigator per category that has a matching MCP, all in a single message so they run concurrently, each owning exactly one tool or MCP. Don't ask one agent to cover multiple MCPs. Role: `why investigators`. Name the exact MCP tools in each brief, because a fresh `subagent` sees only the tools its own composition grants and must not be left to rediscover the catalog.
 
-Each investigator's prompt is `references/investigator-prompt.md` filled in, plus:
-- the category playbook `references/sources/<source>.md` for the selected MCP, adapted from the examples in `references/source-playbook.md`
-- `references/sources/incident-postmortem.md` **if the target code looks defensive** (null checks, retry logic, timeout handling, rate limiting, feature flags, egress guards, OOM handlers)
+Each investigator's prompt is `<pstack>/why/references/investigator-prompt.md` filled in, plus:
+- the category playbook `<pstack>/why/references/sources/<source>.md` for the selected MCP, adapted from the examples in `<pstack>/why/references/source-playbook.md`
+- `<pstack>/why/references/sources/incident-postmortem.md` **if the target code looks defensive** (null checks, retry logic, timeout handling, rate limiting, feature flags, egress guards, OOM handlers)
 - the code anchor and the user's original question
 
 ### Investigator roster, one per available evidence category
@@ -80,8 +80,8 @@ Spawn one synthesizer. Role: `why synthesizer`. It gets:
 1. The investigator findings, including any null results and any categories skipped with justification
 2. The code anchor
 3. The user's original question
-4. The epistemics framework from `references/epistemics.md`
-5. The synthesizer prompt template from `references/synthesizer-prompt.md`
+4. The epistemics framework from `<pstack>/why/references/epistemics.md`
+5. The synthesizer prompt template from `<pstack>/why/references/synthesizer-prompt.md`
 
 ## Step 5. Present
 
@@ -89,7 +89,7 @@ Present the synthesizer's output to the user. You may lightly edit for clarity o
 
 ## Output Format
 
-The structure is the one in `references/synthesizer-prompt.md`: The Question, The Code in Question, What We Found, What We Can Reasonably Infer, Competing Hypotheses, What We Don't Know, Sources Consulted, Confidence Summary. Adapt as needed, but keep the confidence separation intact, and keep Sources Consulted as one line per investigator, including the ones that returned nothing or were skipped, with the reason.
+The structure is the one in `<pstack>/why/references/synthesizer-prompt.md`: The Question, The Code in Question, What We Found, What We Can Reasonably Infer, Competing Hypotheses, What We Don't Know, Sources Consulted, Confidence Summary. Adapt as needed, but keep the confidence separation intact, and keep Sources Consulted as one line per investigator, including the ones that returned nothing or were skipped, with the reason.
 
 After Sources Consulted, if the user's `why` question is a precursor to changing this code, convert the lineage findings into a Preserve / Change / Avoid / Risk constraint set for planning the change.
 

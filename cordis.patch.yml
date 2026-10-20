@@ -30,14 +30,17 @@
         rolesPath: ~/.dsh/ds-pstack-roles.json
         # One JSONL record per decision and per skip. Empty disables journalling.
         logPath: ~/.dsh/ds-pstack-router.jsonl
-        logTasks: true
+        # Off by default: a delegation prompt is user text and may carry a
+        # pasted secret. Enabling it writes a redacted 300-character excerpt.
+        logTasks: false
         # How long the resolved candidate catalogue is reused.
         catalogTtlMs: 300000
         # A route that failed at request time is skipped for this long, and the
         # child is retried onto the next candidate at most this many times.
         quarantineMs: 600000
         maxRouteRetries: 2
-        # Leave the plan/coding wording alone for `description`-only delegations.
+        # Cap on the classification text, in characters. The task region is
+        # taken from the delegate brief; a longer brief is truncated.
         maxTaskChars: 4000
         # Pin every child to one intent (`mechanical` to stop deep reasoning).
         forceIntent: ''

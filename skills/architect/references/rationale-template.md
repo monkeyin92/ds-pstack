@@ -4,7 +4,7 @@ The prose that ships alongside the type sketch. One page. Sentence-case headings
 
 ## Problem
 
-*One paragraph. What we're trying to do, and what about the existing system or constraints makes the shape non-obvious. If [Phase A](../SKILL.md#phase-a-ground-the-problem) surfaced constraints the design must honor (existing types to interop with, callers we can't break, invariants that crossed our boundary), name them here so the reader sees the same constraints you saw.*
+*One paragraph. What we're trying to do, and what about the existing system or constraints makes the shape non-obvious. If [Phase A](<pstack>/architect/SKILL.md#phase-a-ground-the-problem) surfaced constraints the design must honor (existing types to interop with, callers we can't break, invariants that crossed our boundary), name them here so the reader sees the same constraints you saw.*
 
 ## Usage (caller's view)
 
@@ -16,7 +16,7 @@ The prose that ships alongside the type sketch. One page. Sentence-case headings
 
 ## Synthesis decision
 
-*Filled in by [arena](../../arena/SKILL.md). Records which candidate became the base and why, what was adapted from each of the others, and what was rejected and why.*
+*Filled in by [arena](<pstack>/arena/SKILL.md). Records which candidate became the base and why, what was adapted from each of the others, and what was rejected and why.*
 
 ## Tradeoffs accepted
 

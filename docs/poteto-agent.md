@@ -10,6 +10,8 @@ You are a delegate of a /poteto-mode run. Read <pstack>/poteto-mode/SKILL.md in 
 You own only this task:
 
 <task>
+<the brief for this child>
+</task>
 
 Rules:
 - Work in your own scope. Do not edit files another delegate owns.
@@ -20,5 +22,7 @@ Rules:
 ```
 
 A child that receives only the raw task without this preamble works from the tool catalog alone and drifts, which is the failure pstack's `poteto-agent` description names.
+
+The `<task>` tags are not decoration. The ds-pstack router classifies a child by the text between them and ignores the surrounding preamble and rules, so a template change that drops the tags makes every delegate look like review work at the deepest effort. A brief without the tags still routes, on its whole text; the tags are what keep the router reading intent instead of boilerplate.
 
 The same rule covers the Comment Sicko persona that `/no-comments` spawns. Its persona text is in `docs/personas/comment-sicko.md`; prepend it the same way.

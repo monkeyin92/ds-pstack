@@ -8,10 +8,12 @@ Read it before editing any text in `skills/`. A skill that uses a Cursor-only na
 
 Every pstack skill ships with `disable-model-invocation: true`, so it stays out of the model's `<available_skills>` catalog and appears in the `/` menu instead. The user types `/poteto-mode`, `/how`, `/interrogate` and the harness injects the skill body into that turn. That is pstack's own model, unchanged.
 
-The loaded body starts with a `<skill_resources>` block naming this package's `skills/` directory. Treat that absolute path as `<pstack>` and resolve every relative reference against it:
+The loaded body starts with a `<skill_resources>` block naming this package's `skills/` directory. Treat that absolute path as `<pstack>`, and write every reference in a skill body as an absolute `<pstack>/…` path rather than a relative one, because a relative path resolves against `skills/` and not against the file holding it:
 
 - `<pstack>/<name>/SKILL.md` is a sibling skill's body.
 - `<pstack>/poteto-mode/playbooks/<name>.md` is a playbook.
+- `<pstack>/<name>/references/<file>.md` is a reference file, which belongs to the skill directory, never to `skills/references/`.
+- `<pstack>/../docs/<name>.md` is a package document outside `skills/`. It sits in the package's `docs/` directory, one level above the resource base, so it is not a skill resource and a skill never names it `docs/...`.
 
 A subagent reads those files with the `read` tool. There is no named subagent type and no plugin prefix, so a delegate brief names the exact path it must read.
 
@@ -20,7 +22,7 @@ A subagent reads those files with the `read` tool. There is no named subagent ty
 | pstack (Cursor) | DeepSeek Harness |
 | --- | --- |
 | `Task` | `subagent` for a fresh child, `subagent_fork` for one seeded with this conversation |
-| `subagent_type: poteto-agent` | No named agent types. Prepend the delegate brief in `<pstack>/../agents/poteto-agent.md` to the `subagent` prompt instead. |
+| `subagent_type: poteto-agent` | No named agent types. Prepend the delegate brief in `<pstack>/../docs/poteto-agent.md` to the `subagent` prompt instead. That file is a package document in this repo's `docs/`, one level above the `skills/` resource base, so it is not a skill resource. |
 | `subagent_type: generalPurpose` | `subagent` |
 | `readonly: true` | Keep `subagent` and say "do not edit files" in the brief; confirm with `git status` after it returns. A child shares the parent's sandbox and approval policy. |
 | `run_in_background: true` | Nothing to pass. `subagent` publishes the child, returns its id immediately, and reports completion later. Start independent delegations in one assistant message. |
@@ -55,6 +57,6 @@ A skill says which *role* the work needs, not which model. The roles are the pst
 ## What did not port
 
 - Cursor Automations and the `automations/benny` tree. It needs Cursor's automation runtime.
-- Bugbot triage as an automated feed. The triage judgment survives in `references/bugbot-triage.md`; the trigger does not.
+- Bugbot triage as an automated feed. The triage judgment survives in `<pstack>/poteto-mode/references/bugbot-triage.md`; the trigger does not.
 - `-fast` speed selection, which pstack uses by slug suffix. Reasoning effort still applies; speed does not.
 - The `harness/pstack/` generated copy and its CI check.

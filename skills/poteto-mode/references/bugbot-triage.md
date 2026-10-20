@@ -1,6 +1,6 @@
 # Bugbot triage
 
-Use this reference when the Babysit playbook (`../playbooks/babysit.md`) handles Bugbot or review-automation comments. The goal is not to ignore Bugbot by default. The goal is to stop treating every comment as a required code change.
+Use this reference when the Babysit playbook (`<pstack>/poteto-mode/playbooks/babysit.md`) handles Bugbot or review-automation comments. The goal is not to ignore Bugbot by default. The goal is to stop treating every comment as a required code change.
 
 Skipped in DeepSeek Harness: the Bugbot feed itself, as an automated comment stream the harness subscribes to. The rubric below still applies verbatim to any reviewer bot or security-review surface whose comments reach you, so read it as the triage rule for whatever review automation the repo runs.
 

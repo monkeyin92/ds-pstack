@@ -679,21 +679,29 @@ export function orderStack(
     values.sort((a, b) => a.number - b.number);
   const start = byNumber.get(context.number);
   if (start === undefined) return [context];
+  // Walk to the bottom of the stack. Two guards keep this finite: a PR whose
+  // head and base are the same ref (a fork's main -> main) is never a parent,
+  // and the visited set cuts any longer base cycle. The PR list is untrusted
+  // input, so an unguarded walk loops until the process runs out of memory.
+  const visited = new Set<T.PrNumber>([start.number]);
   const down: T.OpenPullRequest[] = [];
   let current = start;
-  while (byHead.has(current.baseRefName)) {
+  while (current.headRefName !== current.baseRefName) {
     const parent = byHead.get(current.baseRefName);
     if (parent === undefined) break;
+    if (parent.headRefName === parent.baseRefName) break;
+    if (visited.has(parent.number)) break;
+    visited.add(parent.number);
     down.push(parent);
     current = parent;
   }
-  const seen = new Set<T.PrNumber>([
-    ...down.map((pr) => pr.number),
-    start.number,
-  ]);
+  const seen = new Set<T.PrNumber>(visited);
   const up: T.OpenPullRequest[] = [];
   const visit = (parent: T.OpenPullRequest): void => {
     for (const child of children.get(parent.headRefName) ?? []) {
+      // A head->same-base PR is not a child of anything; attaching it would
+      // invent a stack edge out of an unrelated fork branch.
+      if (child.headRefName === child.baseRefName) continue;
       if (seen.has(child.number)) continue;
       seen.add(child.number);
       up.push(child);

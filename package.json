@@ -30,6 +30,9 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
   "keywords": [
     "ds-pstack",
     "pstack",

@@ -32,7 +32,7 @@ Two reviewers is the floor: one forensics reader and one design reader. Use thre
 
 Each reviewer is a `subagent` whose brief says "do not edit files and do not apply changes"; check `git status` afterward. Because a fresh `subagent` does not see this conversation, every brief carries the intent paragraph, the diff or file contents, and the `<pstack>` base directory this skill reported.
 
-Read `references/reviewer-prompt.md` and fill in the same template for every reviewer with the stated intent, the diff or file contents, the rubric from `references/rubric.md`, and the code-quality lens from `references/code-quality-review.md`. Name each reviewer's lens explicitly, so the panel is genuinely diverse rather than three copies of the same question.
+Read `<pstack>/interrogate/references/reviewer-prompt.md` and fill in the same template for every reviewer with the stated intent, the diff or file contents, the rubric from `<pstack>/interrogate/references/rubric.md`, and the code-quality lens from `<pstack>/interrogate/references/code-quality-review.md`. Name each reviewer's lens explicitly, so the panel is genuinely diverse rather than three copies of the same question.
 
 ## Step 4, Synthesize
 
@@ -40,7 +40,7 @@ As results come back, build a unified picture. Parse every reviewer's findings. 
 
 ## Step 5, Lead Judgment
 
-You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator. Read `references/lead-judgment.md` for the full framework. Put every finding in one of four buckets, with the reviewer(s) that raised it and a one-line rationale.
+You are the lead reviewer, a pragmatic senior engineer, not a neutral aggregator. Read `<pstack>/interrogate/references/lead-judgment.md` for the full framework. Put every finding in one of four buckets, with the reviewer(s) that raised it and a one-line rationale.
 
 - **Act on**. Real issues affecting correctness, security, or maintainability given the actual goals. They would block a real PR.
 - **Consider**. Legitimate, but you're not sure they outweigh the cost of addressing them now. Worth the user's attention.

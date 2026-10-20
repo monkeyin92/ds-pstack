@@ -1,6 +1,6 @@
 ---
 name: setup-pstack
-description: Configure which models pstack uses per role and at what reasoning budget. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
+description: Configure which models pstack uses per role and at what reasoning budget. Reads the models checked for subagents, asks for a budget, and writes ~/.dsh/ds-pstack-roles.json, which the ds-pstack router reads. Use for /setup-pstack, "configure pstack models", "pstack budget", or changing pstack's model choices.
 ---
 
 # Setup pstack
@@ -42,13 +42,13 @@ Write `~/.dsh/ds-pstack-roles.json`. Valid JSON, no comments, no other keys. Ove
 {
   "budget": "large",
   "intents": {
-    "feature": "opencodex/opencode-go/deepseek-v4.1-flash",
-    "interrogate reviewers": "opencodex/beibei-claude/claude-opus-5 @ high"
+    "feature": "example-provider/example-model",
+    "interrogate reviewers": "example-provider/stronger-model @ high"
   }
 }
 ```
 
-`budget` is one of `unlimited`, `large`, `medium`, `small`. `intents` maps an intent id to one route. An intent with no entry stays on the router's own choice, so leave a role out rather than writing a placeholder. A value may carry an effort as `<route> @ <effort>`, as in `"interrogate reviewers": "opencodex/beibei-claude/claude-opus-5 @ high"`. Replace the sample routes above with ids from the checked pool. Keep the shape exactly `{"budget":"<label>","intents":{"<intent>":"<route>"}}`.
+`budget` is one of `unlimited`, `large`, `medium`, `small`. `intents` maps an intent id to one route. An intent with no entry stays on the router's own choice, so leave a role out rather than writing a placeholder. A value may carry an effort as `<route> @ <effort>`, as in `"interrogate reviewers": "example-provider/stronger-model @ high"`. Replace the sample routes above with ids from the checked pool. Keep the shape exactly `{"budget":"<label>","intents":{"<intent>":"<route>"}}`.
 
 ### 5. The intent ids
 
@@ -77,7 +77,17 @@ interrogate reviewers
 
 Each code playbook reads its own id (`feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`). The hardest changes read `hardest tasks`, and prose and judgment read `judgment and prose`. A role with no entry is routed by the router from the pool, at the budget recorded above.
 
-Several roles share one intent, which is why the router resolves a role name through its intent. `feature` and `refactoring` both land on `coding`, so pinning either pins both. Say that when the user pins one of a pair, so a pin is not a surprise later.
+Several roles share one intent, which is why the router resolves a role name through its intent. A pin is stored per intent, so pinning any role in a group pins the whole group. Say this out loud when the user pins one, so a pin is not a surprise later. The groups are:
+
+- `coding` — `feature`, `refactoring`, `swarm workers`
+- `debugging` — `bug-fix`, `perf-issue`
+- `analysis` — `hillclimb`, `why synthesizer`, `reflect tooling`
+- `writing` — `judgment and prose`, `how explainer`
+- `planning` — `hardest tasks`, `arena runners`, `architect runners`
+- `research` — `how explorer`, `why investigators`
+- `review` — `reflect judgment`, `arena cross-judge pool`, `interrogate reviewers`
+
+Two roles in one group cannot carry different routes. If the user asks for that, explain the grouping and offer a different role for one of them, or leave both unpinned so the router decides. The router keeps the first pin it reads and ignores a later conflicting one with a warning in `~/.dsh/ds-pstack-router.jsonl`; it does not silently merge them. Write one entry per intent so the file never contains a pin the router will drop.
 
 ### 6. Confirm
 

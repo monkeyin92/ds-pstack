@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  router:
+    name: router (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run the router and skill-provider tests
+        run: node --test "test/*.test.js"
+
+  tooling:
+    name: tooling (bun)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: skills/poteto-mode/scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install the tooling dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
+
+  scripts:
+    name: shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check every shell script parses
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r script; do
+            if bash -n "$script"; then
+              echo "ok $script"
+            else
+              echo "::error file=$script::bash -n failed"
+              failed=1
+            fi
+          done < <(git ls-files '*.sh')
+          exit "$failed"

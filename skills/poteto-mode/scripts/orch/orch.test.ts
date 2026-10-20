@@ -459,6 +459,80 @@ describe("Store", () => {
     expect(await readdir(directory)).not.toContain(".orch.lock");
   });
 
+  it("serialises concurrent takeovers of a dead holder's lock", async () => {
+    // Unlink-then-create let two processes that both judged the holder dead
+    // each unlink and each create, so both believed they held the lock. The
+    // window is narrow, so run enough rounds that the pre-fix code reliably
+    // fails; every round must produce exactly one winner whose lock still
+    // names it at the end of its hold.
+    const workers = 8;
+    const rounds = 5;
+    const script = `
+      const { openStore, UserError } = await import(${JSON.stringify(
+        new URL("./store.ts", import.meta.url).href
+      )});
+      const { readFile } = await import("node:fs/promises");
+      const directory = process.argv[1];
+      const store = openStore(directory, { onStaleLock: () => {} });
+      try {
+        await store.init();
+      } catch (error) {
+        console.log(error instanceof UserError ? "blocked" : "error");
+        await store.close().catch(() => {});
+        process.exit(0);
+      }
+      // Hold the lock long enough for every loser to have run its takeover,
+      // then confirm the lock path still names this process.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      let held = "unreadable";
+      try {
+        held = (await readFile(directory + "/.orch.lock", "utf8")).trim();
+      } catch {
+        held = "missing";
+      }
+      console.log(held === String(process.pid) ? "held" : "lost:" + held);
+      await store.close();
+    `;
+
+    for (let round = 0; round < rounds; round += 1) {
+      const directory = await makeDirectory();
+      const store = useStore(directory);
+      await store.init();
+      await store.close();
+
+      const exited = Bun.spawn(["true"]);
+      await exited.exited;
+      await writeFile(join(directory, ".orch.lock"), `${exited.pid}\n`);
+
+      const children = Array.from({ length: workers }, () =>
+        Bun.spawn([process.execPath, "-e", script, directory], {
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+      );
+      const outputs = await Promise.all(
+        children.map(async (child) => {
+          const [code, stdout] = await Promise.all([
+            child.exited,
+            new Response(child.stdout).text(),
+          ]);
+          return { code, stdout: stdout.trim() };
+        })
+      );
+
+      const winners = outputs.filter((out) => out.stdout === "held");
+      const lost = outputs.filter((out) => out.stdout.startsWith("lost:"));
+      const crashed = outputs.filter((out) => out.code !== 0);
+      expect({ round, winners: winners.length, lost, crashed }).toEqual({
+        round,
+        winners: 1,
+        lost: [],
+        crashed: [],
+      });
+      expect(await readdir(directory)).not.toContain(".orch.lock");
+    }
+  }, 60_000);
+
   it("parks gates, stores standing orders, and renders status", async () => {
     const { directory, store } = await initializedStore();
     await store.units.add({ id: "u1", track: "build" });

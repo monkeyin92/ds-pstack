@@ -13,6 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const UNIT_HEADER = "id\ttrack\tstate\tbranch\tpr\tsha\tbrief";
 const LEDGER_HEADER = "pr\tsha\tverdict\tevidence\tverifier\tts";
@@ -384,24 +385,101 @@ async function acquireLock(
   options: OpenStoreOptions
 ): Promise<() => Promise<void>> {
   const path = join(store, LOCK_FILE);
+  const guard = join(store, `${LOCK_FILE}.takeover`);
   const pid = String(process.pid);
+  const holderOf = async (file: string): Promise<string> => {
+    try {
+      return (await readFile(file, "utf8")).trim() || "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
   const create = async (): Promise<void> => {
     const handle = await open(path, "wx");
-    await handle.writeFile(`${pid}\n`);
-    await handle.close();
+    try {
+      await handle.writeFile(`${pid}\n`);
+    } finally {
+      await handle.close();
+    }
   };
 
-  const takeOver = async (): Promise<void> => {
-    await unlink(path);
-    try {
-      await create();
-    } catch (retryError) {
-      if (errorCode(retryError) === "EEXIST") {
-        const retryHolder =
-          (await readFile(path, "utf8")).trim() || "unknown";
-        throw new UserError(`store lock held by pid ${retryHolder}`);
+  // Takeover cannot be done by unlink-then-create: two processes that both
+  // judge the holder dead can each unlink and each create, so both believe
+  // they hold the lock. Two mechanisms replace that:
+  //   1. A takeover guard created with O_EXCL serialises the whole
+  //      read-judge-replace sequence, so two takeovers never interleave.
+  //   2. The replacement is written by rename over the lock path, so the path
+  //      is never absent and a concurrent O_EXCL creator has nothing to slip
+  //      into; the loser fails closed with a UserError naming the holder.
+  const acquireGuard = async (): Promise<() => Promise<void>> => {
+    const deadline = Date.now() + 2_000;
+    for (;;) {
+      try {
+        const handle = await open(guard, "wx");
+        try {
+          await handle.writeFile(`${pid}\n`);
+        } finally {
+          await handle.close();
+        }
+        return async () => {
+          if ((await holderOf(guard)) === pid) {
+            await rm(guard, { force: true });
+          }
+        };
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
       }
-      throw retryError;
+      const guardHolder = await holderOf(guard);
+      if (guardHolder !== pid && holderIsDead(guardHolder)) {
+        // Claim the abandoned guard with rename: only one process can consume
+        // a given path, so two recoverers cannot both believe they claimed it.
+        const claimed = join(
+          store,
+          `.${LOCK_FILE}.takeover.${pid}.${randomUUID()}.reaped`
+        );
+        try {
+          await rename(guard, claimed);
+        } catch (error) {
+          if (errorCode(error) === "ENOENT") continue;
+          throw error;
+        }
+        const claimedHolder = await holderOf(claimed);
+        await rm(claimed, { force: true });
+        if (claimedHolder !== guardHolder) {
+          // The guard was replaced between the liveness check and the claim,
+          // so this rename consumed a live guard. Fail closed: continuing
+          // would let two takeovers run at once.
+          throw new UserError(
+            `store lock takeover race with pid ${claimedHolder}; retry`
+          );
+        }
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new UserError(
+          `store lock takeover held by pid ${guardHolder}; retry`
+        );
+      }
+      await sleep(5);
+    }
+  };
+
+  const takeOver = async (staleHolder: string): Promise<void> => {
+    const release = await acquireGuard();
+    try {
+      // Re-read under the guard: another process may have replaced the lock
+      // between judging it stale and getting here.
+      const current = await holderOf(path);
+      if (current !== staleHolder) {
+        throw new UserError(`store lock held by pid ${current}`);
+      }
+      // Replace by rename so the lock path is never absent: a plain creator
+      // cannot slip an O_EXCL creation into a window between unlink and
+      // create. Only the guard holder reaches this point, so exactly one
+      // process can replace the stale lock.
+      await atomicWrite(path, `${pid}\n`);
+    } finally {
+      await release();
     }
   };
 
@@ -411,18 +489,13 @@ async function acquireLock(
     if (errorCode(error) !== "EEXIST") {
       throw error;
     }
-    let holder = "unknown";
-    try {
-      holder = (await readFile(path, "utf8")).trim() || "unknown";
-    } catch {
-      holder = "unknown";
-    }
+    const holder = await holderOf(path);
     if (holderIsDead(holder)) {
       options.onStaleLock?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else if (options.force) {
       options.onLockStolen?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else {
       throw new UserError(`store lock held by pid ${holder}`);
     }
