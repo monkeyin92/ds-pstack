@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+
+# Local runtime artifacts
+*.log
+*.tmp
+.audit/
+decisions.tsv
+
+# Harness state that must never be committed
+*.credentials.yaml
+.dsh/

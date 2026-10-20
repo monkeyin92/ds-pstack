@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ds-pstack skills",
+    "description": "pstack's playbooks, principles, and review skills as / commands: /poteto-mode runs the playbook, /interrogate reviews adversarially, /how explains a subsystem."
+  }
+}

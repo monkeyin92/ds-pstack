@@ -1,0 +1,42 @@
+{
+  "name": "@local/ds-pstack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "pstack for DeepSeek Harness: rigorous agent workflows, with each subagent's model chosen from the models you checked for subagents.",
+  "exports": {
+    "./router": "./lib/router.js",
+    "./skills": "./lib/skills.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./router/locale/*.json": "./locale/router/*.json",
+    "./router/icon": "./icon.svg",
+    "./skills/locale/*.json": "./locale/skills/*.json",
+    "./skills/icon": "./icon.svg"
+  },
+  "files": [
+    "lib",
+    "skills",
+    "docs",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE.pstack"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "ds-pstack",
+    "pstack",
+    "poteto-mode",
+    "workflow",
+    "principles",
+    "subagents"
+  ],
+  "license": "MIT"
+}

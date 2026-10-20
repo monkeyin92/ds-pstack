@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ds-pstack",
+    "description": "pstack's rigorous agent workflows for DeepSeek Harness. Each delegated subagent's model and reasoning effort are chosen from the models you checked for subagents."
+  }
+}

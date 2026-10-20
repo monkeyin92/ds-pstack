@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ds-pstack",
+    "description": "把 pstack 的严谨工作流带到 DeepSeek Harness。每个子智能体的模型与推理档位，自动从你在设置中勾选的子智能体模型里挑选。"
+  }
+}

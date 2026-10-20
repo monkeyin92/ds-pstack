@@ -1,0 +1,43 @@
+# ds-pstack — profile patch.
+#
+# Inserted after every bundle layer, before the profile's own cordis.patch.yml,
+# so any key here is overridable from the profile by targeting these entry ids.
+#
+# Two rows, two capabilities:
+#
+#   ds-pstack-skills  publishes pstack's skills into the `/` menu and the
+#                     `skill` tool, from this package. Disabling it leaves the
+#                     router working and removes every pstack skill.
+#   ds-pstack-router  chooses each delegated child's model and reasoning effort
+#                     out of the models checked in Settings, Subagent model
+#                     selection. Disabling it leaves the skills working and every
+#                     child on the route it inherited.
+- insert:
+    - id: ds-pstack-skills
+      name: '@local/ds-pstack/skills'
+
+    - id: ds-pstack-router
+      name: '@local/ds-pstack/router'
+      config:
+        enabled: true
+        # `children` routes delegated subagents and teammates. `all` would also
+        # route the top-level session, whose model the user picked themselves.
+        scope: children
+        # pstack budget label: `unlimited`, `large`, `medium`, or `small`.
+        # `/setup-pstack` records the chosen one in rolesPath and wins over this.
+        budget: large
+        # Role pins and the budget written by `/setup-pstack`.
+        rolesPath: ~/.dsh/ds-pstack-roles.json
+        # One JSONL record per decision and per skip. Empty disables journalling.
+        logPath: ~/.dsh/ds-pstack-router.jsonl
+        logTasks: true
+        # How long the resolved candidate catalogue is reused.
+        catalogTtlMs: 300000
+        # A route that failed at request time is skipped for this long, and the
+        # child is retried onto the next candidate at most this many times.
+        quarantineMs: 600000
+        maxRouteRetries: 2
+        # Leave the plan/coding wording alone for `description`-only delegations.
+        maxTaskChars: 4000
+        # Pin every child to one intent (`mechanical` to stop deep reasoning).
+        forceIntent: ''
