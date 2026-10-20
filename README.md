@@ -10,10 +10,10 @@ This port keeps pstack's playbooks, principles, and prose rules. Two things chan
 
 ## Install
 
-The package installs as a Harness bundle:
+The package installs as a Harness bundle, straight from this repository:
 
 ```
-plugin_manager install_bundle /path/to/ds-pstack
+plugin_manager install_bundle github:monkeyin92/ds-pstack#main
 ```
 
 That adds two plugin rows to the profile. Disable either one to keep the other.
@@ -23,7 +23,26 @@ That adds two plugin rows to the profile. Disable either one to keep the other.
 | `ds-pstack-skills` | pstack's skills leave the catalog; routing still works |
 | `ds-pstack-router` | every child runs on the route it inherited; skills still work |
 
+### Updates
+
+Installing from the repository means updates are a pull, not a reinstall. The profile records a git dependency, so the next fetch picks up whatever is on `main`:
+
+```
+dsh plugin --profile <profile> update @local/ds-pstack
+```
+
+The profile's package manager resolves the branch to a commit and records both. Skill text reloads from disk on its own; the router's JavaScript is a separate module generation, so restart the Harness app after an update that changes `lib/`.
+
+To stay on a fixed release instead of tracking `main`, install a tag:
+
+```
+plugin_manager install_bundle github:monkeyin92/ds-pstack#v0.1.0
+```
+
+A tag pins that commit until you install again. New tags are published as `v<version>` when the version in `package.json` changes.
+
 ## The model pool is yours
+
 
 ds-pstack chooses only from the routes checked in **Settings → Subagent model selection** (`subagent-model-selection-settings.allowedModels`). That setting is the authorization boundary, so the router never widens it: a model you did not check is never sent, even when it would suit the task better.
 
