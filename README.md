@@ -31,7 +31,9 @@ Installing from the repository means updates are a pull, not a reinstall. The pr
 dsh plugin --profile <profile> update @local/ds-pstack
 ```
 
-The profile's package manager resolves the branch to a commit and records both. Skill text reloads from disk on its own; the router's JavaScript is a separate module generation, so restart the Harness app after an update that changes `lib/`.
+The profile's package manager resolves the branch to a commit and records both. Skill text reloads from disk on its own. The router's JavaScript is a separate module generation, so after an update that changes `lib/` the plugin has to be re-mounted: toggle the `ds-pstack-router` row off and on in Plugin Manager, which re-imports the module. A full app restart also works, and is the simpler option if you are unsure.
+
+To develop against a checkout instead of the published copy, install it by path (`plugin_manager install_bundle /absolute/path`) and reinstall from the git spec when you are done.
 
 To stay on a fixed release instead of tracking `main`, install a tag:
 
