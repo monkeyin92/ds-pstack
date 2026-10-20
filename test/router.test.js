@@ -515,3 +515,200 @@ describe('router: fork children', () => {
     assert.equal(result.model, 'group/claude-opus-5-5')
   })
 })
+
+describe('classifier: defects found in adversarial review', () => {
+  it('does not let hard difficulty erase mechanical evidence', () => {
+    // `prettier` plus a hard marker used to return debugging at max effort.
+    const r = classifyTask('Format the whole repo with prettier across the whole codebase')
+    assert.equal(r.intent, 'mechanical')
+  })
+
+  it('matches plural and past-tense defect words', () => {
+    assert.equal(classifyTask('There are three bugs in the retry path').intent, 'debugging')
+    assert.equal(classifyTask('The service crashes on startup and logs errors').intent, 'debugging')
+    assert.equal(classifyTask('The nightly build failed on main').intent, 'debugging')
+  })
+
+  it('does not read the idiom "sort out" as mechanical', () => {
+    assert.notEqual(classifyTask('Sort out the flaky nightly deploy').intent, 'mechanical')
+  })
+
+  it('routes caller-lookup questions to research', () => {
+    assert.equal(classifyTask('Find all callers of parseConfig').intent, 'research')
+    assert.equal(classifyTask('Grep for every usage of the retry helper').intent, 'research')
+  })
+
+  it('routes reviewing a bug fix to review, not debugging', () => {
+    assert.equal(classifyTask('Review this bug fix').intent, 'review')
+    assert.equal(classifyTask('Review the fix for the login bug').intent, 'review')
+  })
+
+  it('still routes fixing a defect to debugging', () => {
+    assert.equal(classifyTask('Fix the flaky login test').intent, 'debugging')
+  })
+
+  it('routes documenting an API to writing', () => {
+    assert.equal(classifyTask('Document the public API of the parser').intent, 'writing')
+  })
+
+  it('splits the opening instruction on a blank line before normalizing', () => {
+    const task = 'Write the changelog for 2.0\n\nThe release fixes a bug, a crash, an error, and a regression.'
+    assert.equal(classifyTask(task).intent, 'writing')
+  })
+
+  it('tolerates a missing or null hints argument', () => {
+    assert.equal(classifyTask('Review this diff and find blind spots', null).intent, 'review')
+    assert.equal(classifyTask('Review this diff and find blind spots', undefined).intent, 'review')
+  })
+})
+
+describe('ranking: defects found in adversarial review', () => {
+  it('does not read "gemini" as a mini model or "elite" as a lite one', () => {
+    // Both used to land in the `fast` class, scoring below an unknown model for review.
+    assert.ok(scoreModel({ id: 'google/gemini-3' }, 'review') >= scoreModel({ id: 'acme/unknown-9' }, 'review'))
+    assert.ok(scoreModel({ id: 'x/elite-1' }, 'review') >= scoreModel({ id: 'acme/unknown-9' }, 'review'))
+  })
+
+  it('still reads a genuine mini/flash model as fast', () => {
+    assert.ok(scoreModel({ id: 'acme/chat-mini' }, 'mechanical') > scoreModel({ id: 'acme/chat-large' }, 'mechanical'))
+    assert.ok(scoreModel({ id: 'deepseek-v4-1-flash' }, 'research') > scoreModel({ id: 'acme/unknown-9' }, 'research'))
+  })
+
+  it('does not read the description word "reasoning" as a strong model', () => {
+    const lite = { id: 'acme/chat-lite', description: 'Low-cost model with configurable reasoning effort' }
+    assert.ok(scoreModel(lite, 'review') < scoreModel({ id: 'acme/claude-opus-5-5' }, 'review'))
+  })
+
+  it('ranks a strong model above a cheap coder for analysis', () => {
+    assert.ok(scoreModel({ id: 'acme/opus-5-5' }, 'analysis') > scoreModel({ id: 'acme/flash-coder' }, 'analysis'))
+  })
+
+  it('does not let a long context window overturn the class comparison for review', () => {
+    const cheapLong = scoreModel({ id: 'acme/flash' }, 'review', { contextWindow: 1_000_000 })
+    const deep = scoreModel({ id: 'acme/opus-5-5' }, 'review', { contextWindow: 200_000 })
+    assert.ok(deep > cheapLong, `deep ${deep} should beat cheap-long ${cheapLong}`)
+  })
+})
+
+describe('config: prototype keys', () => {
+  it('rejects an inherited object key as a budget label', () => {
+    assert.equal(normalizeConfig({ budget: 'constructor' }).budget, 'large')
+    assert.equal(normalizeConfig({ budget: 'toString' }).budget, 'large')
+    assert.equal(normalizeConfig({ budget: 'large' }).budget, 'large')
+  })
+})
+
+describe('router: defects found in adversarial review', () => {
+  const pool = [{ provider: 'magpie', model: 'group/deepseek-v4-1-flash' }, { provider: 'magpie', model: 'group/claude-opus-5-5' }]
+  const catalogue = [
+    { provider: 'magpie', model: 'group/deepseek-v4-1-flash', efforts: ['low', 'high', 'max'] },
+    { provider: 'magpie', model: 'group/claude-opus-5-5', efforts: ['low', 'medium', 'high', 'max'] },
+  ]
+  const base = { provider: 'magpie', model: 'group/deepseek-v4-1-flash', reasoningEffort: 'max' }
+
+  it('drops a pinned effort the route does not advertise instead of failing the turn', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-pinbad-'))
+    const rolesPath = join(dir, 'roles.json')
+    writeFileSync(rolesPath, JSON.stringify({ budget: 'large', intents: { review: 'magpie/group/claude-opus-5-5 @ xhigh' } }))
+    const { ctx, journalPath } = routed(pool, catalogue, { rolesPath })
+    const child = fakeAgent('c1', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    const result = await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    assert.equal(result.model, 'group/claude-opus-5-5')
+    // xhigh is not advertised, so a supported effort is used instead of xhigh.
+    assert.notEqual(result.reasoningEffort, 'xhigh')
+    const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    assert.ok(events.some(event => event.event === 'decision' && event.pinEffortDropped === true))
+  })
+
+  it('does not reuse a cached decision for a route the user unchecked', async () => {
+    let checked = [...pool]
+    const ctx = fakeContext({
+      services: {
+        subagentModelSelection: { current: () => ({ enabled: true, allowedModels: checked }) },
+        llm: fakeLlm(catalogue),
+        agents: { get: () => undefined },
+      },
+    })
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-uncheck-'))
+    applyRouter(ctx, { rolesPath: join(dir, 'none.json'), logPath: join(dir, 'j.jsonl') })
+    const child = fakeAgent('c2', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    const first = await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    assert.equal(first.model, 'group/claude-opus-5-5')
+    // The user unchecks the strong model while the child is still running.
+    checked = [{ provider: 'magpie', model: 'group/deepseek-v4-1-flash' }]
+    const second = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, first)
+    assert.equal(second.model, 'group/deepseek-v4-1-flash')
+  })
+
+  it('does not cache a negative outcome, so a later step can still be routed', async () => {
+    const { ctx, journalPath } = routed(pool, catalogue)
+    const child = fakeAgent('c3', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    // First request: no task captured yet, so nothing is routed.
+    const first = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    assert.deepEqual(first, base)
+    // The prompt arrives on the next step; the child must still be routable.
+    const second = await delegate(ctx, child, first, 'Review this diff and find blind spots')
+    assert.equal(second.model, 'group/claude-opus-5-5')
+    const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    assert.ok(events.some(event => event.event === 'decision'))
+  })
+
+  it('does not quarantine a route when the stream was merely aborted', async () => {
+    const { ctx, journalPath } = routed(pool, catalogue)
+    const child = fakeAgent('c4', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    const aborted = new AbortController()
+    aborted.abort()
+    const action = await ctx.waterfall('agent/request-error', {
+      agent: child, turn: 1, step: 1, provider: 'magpie', failure: { code: 'aborted' }, signal: aborted.signal,
+    }, undefined)
+    assert.equal(action, undefined)
+    const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    assert.ok(!events.some(event => event.event === 'route-failed'))
+    // The child keeps its route.
+    const again = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, base)
+    assert.equal(again.model, 'group/claude-opus-5-5')
+  })
+
+  it('compares against the parent effective request header, so a grandchild is still routed', async () => {
+    // The parent's logged request header is the router's own chosen route; a
+    // child stamped from it must not look like an explicit request.
+    const parent = {
+      ...fakeAgent('root', {}, { provider: 'magpie', model: 'group/deepseek-v4-1-flash' }),
+      session: {
+        header: { id: 'root', version: 1, createdAt: 0, isSeeded: false },
+        requestHeader: () => ({ config: { provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'high' } }),
+      },
+    }
+    const { ctx } = routed(pool, catalogue, { parent })
+    const child = fakeAgent('c5', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' }, {
+      provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'high',
+    })
+    const result = await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    // Routed, not skipped as explicit.
+    assert.equal(result.model, 'group/claude-opus-5-5')
+    assert.equal(result.reasoningEffort, 'high')
+  })
+
+  it('routes the top-level session under scope: all', async () => {
+    const { ctx } = routed(pool, catalogue, { config: { scope: 'all' } })
+    const root = fakeAgent('top')
+    const result = await delegate(ctx, root, base, 'Review this diff and find blind spots')
+    assert.equal(result.model, 'group/claude-opus-5-5')
+  })
+
+  it('does not let a quarantined route win through a pin', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-pinq-'))
+    const rolesPath = join(dir, 'roles.json')
+    writeFileSync(rolesPath, JSON.stringify({ budget: 'large', intents: { review: 'magpie/group/claude-opus-5-5' } }))
+    const { ctx } = routed(pool, catalogue, { rolesPath })
+    const child = fakeAgent('c6', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    // The pinned route fails, so the retry must move to another candidate.
+    await ctx.waterfall('agent/request-error', {
+      agent: child, turn: 1, step: 1, provider: 'magpie', failure: { code: 'provider_disabled' }, signal: new AbortController().signal,
+    }, undefined)
+    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    assert.equal(retried.model, 'group/deepseek-v4-1-flash')
+  })
+})

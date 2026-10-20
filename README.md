@@ -102,4 +102,4 @@ pstack is MIT licensed by Lauren Tan. Its license is kept in [LICENSE.pstack](LI
 node --test "test/*.test.js"
 ```
 
-50 tests cover classification and its positional weighting, effort mapping, model ranking, pool enforcement, pin handling, fork protection, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies.
+72 tests cover classification and its positional weighting, effort mapping, model ranking, pool enforcement, pin handling, fork protection, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies.
