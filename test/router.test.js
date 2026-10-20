@@ -712,3 +712,102 @@ describe('router: defects found in adversarial review', () => {
     assert.equal(retried.model, 'group/deepseek-v4-1-flash')
   })
 })
+
+describe('router: coverage for defects 3, 5, 8, 11 and the orphan-parent regression', () => {
+  const pool = [{ provider: 'magpie', model: 'group/deepseek-v4-1-flash' }, { provider: 'magpie', model: 'group/claude-opus-5-5' }]
+  const catalogue = [
+    { provider: 'magpie', model: 'group/deepseek-v4-1-flash', efforts: ['low', 'high', 'max'] },
+    { provider: 'magpie', model: 'group/claude-opus-5-5', efforts: ['low', 'medium', 'high', 'max'] },
+  ]
+  const base = { provider: 'magpie', model: 'group/deepseek-v4-1-flash', reasoningEffort: 'max' }
+
+  it('stops offering a route the moment it is unchecked, not after the catalogue TTL', async () => {
+    let checked = [...pool]
+    const ctx = fakeContext({
+      services: {
+        subagentModelSelection: { current: () => ({ enabled: true, allowedModels: checked }) },
+        llm: fakeLlm(catalogue),
+        agents: { get: () => undefined },
+      },
+    })
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-ttl-'))
+    applyRouter(ctx, { rolesPath: join(dir, 'none.json'), logPath: join(dir, 'j.jsonl'), config: { catalogTtlMs: 300_000 } })
+    const first = fakeAgent('c-ttl-1', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    assert.equal((await delegate(ctx, first, base, 'Review this diff and find blind spots')).model, 'group/claude-opus-5-5')
+    // Default TTL is five minutes; a stale catalogue would keep offering opus.
+    checked = [{ provider: 'magpie', model: 'group/deepseek-v4-1-flash' }]
+    const second = fakeAgent('c-ttl-2', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    assert.equal((await delegate(ctx, second, base, 'Review this diff and find blind spots')).model, 'group/deepseek-v4-1-flash')
+  })
+
+  it('honours an explicit reasoning effort even when the model is unchanged', async () => {
+    const parent = {
+      ...fakeAgent('root', {}, { provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'high' }),
+      session: {
+        header: { id: 'root', version: 1, createdAt: 0, isSeeded: false },
+        requestHeader: () => ({ config: { provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'high' } }),
+      },
+    }
+    const { ctx } = routed(pool, catalogue, { parent })
+    // Same route as the parent, but the delegation asked for a different effort.
+    const child = fakeAgent('c-eff', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' }, {
+      provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'low',
+    })
+    const result = await delegate(ctx, child, base, 'Review this diff and find blind spots')
+    assert.equal(result.reasoningEffort, 'max')
+    assert.equal(result.reasoningEffort, base.reasoningEffort)
+  })
+
+  it('does not cache a catalogue built while the turn was aborting', async () => {
+    const controller = new AbortController()
+    let resolveCalls = 0
+    const llm = {
+      listProviders: () => [{ id: 'magpie', name: 'magpie' }],
+      listModels: async () => [],
+      resolveModelInfo: async (args) => {
+        resolveCalls += 1
+        if (resolveCalls === 1) {
+          controller.abort()
+          throw new Error('aborted mid-resolve')
+        }
+        // Name each route after itself: a stub that reported the opus name for
+        // the flash route would classify both as strong and hide the ranking.
+        return { provider: 'magpie', id: args.model, name: args.model, reasoning: { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }, { id: 'max' }] } }
+      },
+    }
+    const ctx = fakeContext({
+      services: {
+        subagentModelSelection: { current: () => ({ enabled: true, allowedModels: pool }) },
+        llm,
+        agents: { get: () => undefined },
+      },
+    })
+    const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-abort-'))
+    applyRouter(ctx, { rolesPath: join(dir, 'none.json'), logPath: join(dir, 'j.jsonl') })
+    const child = fakeAgent('c-abort', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
+    await ctx.waterfall('agent/pre-step', {
+      agent: child, messages: [{ role: 'user', content: [{ type: 'text', text: 'Review this diff and find blind spots' }] }], signal: controller.signal,
+    }, undefined)
+    const first = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: controller.signal }, base)
+    // The abort must not be cached as "no metadata": the child falls back now,
+    // and a later request resolves again rather than reusing a degraded catalogue.
+    assert.deepEqual(first, base)
+    const second = await ctx.waterfall('agent/request', {
+      agent: child, turn: 1, step: 2, signal: new AbortController().signal,
+    }, base)
+    assert.equal(second.model, 'group/claude-opus-5-5')
+    assert.ok(second.reasoningEffort !== undefined, 'a re-resolved route must carry an effort')
+  })
+
+  it('preserves an explicit route when the parent is not in the live registry', async () => {
+    const { ctx } = routed(pool, catalogue, { parent: undefined })
+    // parentSession names a parent the registry no longer holds.
+    const child = fakeAgent('c-orphan', { origin: 'subagent', delegationDepth: 1, parentSession: 'gone' }, {
+      provider: 'magpie', model: 'group/claude-opus-5-5', reasoningEffort: 'high',
+    })
+    const result = await delegate(ctx, child, base, 'Rename the constant')
+    // Explicit means untouched: the proposed configuration is returned as-is,
+    // because there is no authority to overrule the choice on a guess.
+    assert.deepEqual(result, base)
+  })
+})
