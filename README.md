@@ -2,15 +2,15 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/monkeyin92/ds-pstack?style=social)](https://github.com/monkeyin92/ds-pstack)
 
-**把 pstack 的 57 个严谨工程 skill 搬到 DeepSeek Harness，子 agent 的模型自动从你勾选的模型里挑，分类不另打一次模型。**
+**把 pstack 的 58 个严谨工程 skill 搬到 DeepSeek Harness，子 agent 的模型自动从你勾选的模型里挑，分类不另打一次模型。**
 
-Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/main/pstack) agent workflows, ported to DeepSeek Harness. Same 57 skills, plus a deterministic router that picks each subagent's model from the models *you* checked.
+Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/main/pstack) agent workflows, ported to DeepSeek Harness. Same 58 skills, plus a deterministic router that picks each subagent's model from the models *you* checked.
 
 ## 和原版 pstack 有什么不同 / What's different
 
 | | pstack (Cursor) | ds-pstack (DeepSeek Harness) |
 | --- | --- | --- |
-| Skills | 57 skills, `/poteto-mode` etc. | 同样的 57 个，名字不变 / the same 57, same names |
+| Skills | 58 skills, `/poteto-mode` etc. | 同样的 58 个，名字不变 / the same 58, same names |
 | 子 agent 模型 / Subagent model | 每个角色写死一个模型 slug / a model slug per role | 按任务意图从你勾选的模型池里自动挑 / routed by task intent from your checked pool |
 | 分类开销 / Routing cost | n/a | 确定性规则分类，分类不调用模型 / deterministic classification, no model call |
 | 越权 / Pool boundary | n/a | 路由器只从勾选池里选 / the router only selects from the checked pool |
@@ -40,7 +40,7 @@ plugin_manager install_bundle github:monkeyin92/ds-pstack#main
 
 This port keeps pstack's playbooks, principles, and prose rules. Two things change, because DeepSeek Harness works differently from Cursor.
 
-**The skills are the same skills.** All 57 of them, in the `/` menu under their pstack names. `/poteto-mode` runs the playbook, `/interrogate` runs the adversarial review, `/how` explains a subsystem, and the 24 `principle-*` skills carry the reasoning pstack is built on.
+**The skills are the same skills.** All 58 of them, in the `/` menu under their pstack names. `/poteto-mode` runs the playbook, `/interrogate` runs the adversarial review, `/how` explains a subsystem, and the 24 `principle-*` skills carry the reasoning pstack is built on.
 
 **The models are chosen for you, out of your own list.** pstack on Cursor names a model slug per role. ds-pstack cannot do that, because a Harness profile's models are whatever you configured and checked. So the router reads the child's task, decides what kind of work it is, and picks the best route from the models you checked for subagents. A skill never names a model. The router picks from that checked pool, and `/setup-pstack` is the only place a route is pinned.
 

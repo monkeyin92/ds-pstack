@@ -1,4 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   ChecksUnavailable,
   WatcherQueryError,
@@ -418,20 +422,78 @@ describe("context and stack discovery", () => {
       {
         number: parsePrNumber(41),
         headRefName: "base-feature",
+        isCrossRepository: false,
         baseRefName: "main",
       },
       {
         number: context.number,
         headRefName: "feature",
+        isCrossRepository: false,
         baseRefName: "base-feature",
       },
       {
         number: parsePrNumber(43),
         headRefName: "upstack",
+        isCrossRepository: false,
         baseRefName: "feature",
       },
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([41, 42, 43]);
+  });
+
+  it("does not use a fork's same-named head as a stack parent", () => {
+    const ordered = orderStack(context, [
+      { number: parsePrNumber(41), headRefName: "base-feature", baseRefName: "main", isCrossRepository: true },
+      { number: context.number, headRefName: "feature", baseRefName: "base-feature", isCrossRepository: false },
+    ]);
+    expect(ordered.map((item) => Number(item.number))).toEqual([42]);
+  });
+
+  it("does not attach upstream branch children to a fork head", () => {
+    const ordered = orderStack(context, [
+      { number: context.number, headRefName: "feature", baseRefName: "main", isCrossRepository: true },
+      { number: parsePrNumber(43), headRefName: "upstack", baseRefName: "feature", isCrossRepository: false },
+    ]);
+    expect(ordered.map((item) => Number(item.number))).toEqual([42]);
+  });
+
+  it("terminates when an unrelated fork opens main against main", () => {
+    // Bound the subprocess so this regression reports a failure instead of hanging the suite.
+    const program = `import { orderStack } from ${JSON.stringify(import.meta.dir + "/github.ts")};
+      console.log(JSON.stringify(orderStack(${JSON.stringify(context)}, [
+        { number: 41, headRefName: "main", baseRefName: "main", isCrossRepository: true },
+        { number: 42, headRefName: "feature", baseRefName: "main", isCrossRepository: false }
+      ])));`;
+    const child = spawnSync(process.execPath, ["-e", program], { encoding: "utf8", timeout: 2000 });
+    expect(child.error).toBeUndefined();
+    expect(child.status).toBe(0);
+    expect(JSON.parse(child.stdout).map((item: { number: number }) => item.number)).toEqual([42]);
+  });
+
+  it("requests and parses fork identity from gh before stack discovery", () => {
+    const directory = mkdtempSync(join(tmpdir(), "watch-pr-fork-"));
+    try {
+      writeFileSync(join(directory, "gh"), `#!/bin/sh
+case "$*" in
+  *number,headRefName,baseRefName,isCrossRepository*) ;;
+  *) exit 2 ;;
+esac
+printf '%s\\n' '[{"number":42,"headRefName":"feature","baseRefName":"main","isCrossRepository":true}]'
+`, { mode: 0o755 });
+      const program = `import { GhGitHubReader } from ${JSON.stringify(import.meta.dir + "/github.ts")};
+        console.log(JSON.stringify(await new GhGitHubReader().openPullRequests({ owner: "owner", repo: "repo" })));`;
+      const child = spawnSync(process.execPath, ["-e", program], {
+        encoding: "utf8", timeout: 2000,
+        env: { ...process.env, PATH: directory + ":" + process.env.PATH },
+      });
+      expect(child.error).toBeUndefined();
+      expect(child.status).toBe(0);
+      expect(JSON.parse(child.stdout)).toEqual([
+        { number: 42, headRefName: "feature", baseRefName: "main", isCrossRepository: true },
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("ignores a fork PR whose head and base share a ref instead of looping", () => {
@@ -439,16 +501,16 @@ describe("context and stack discovery", () => {
     // and the head of another one. Walking down used to follow that edge back
     // into itself forever.
     const ordered = orderStack(context, [
-      { number: context.number, headRefName: "feature", baseRefName: "main" },
-      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+      { number: context.number, headRefName: "feature", baseRefName: "main", isCrossRepository: false },
+      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main", isCrossRepository: true },
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([42]);
   });
 
   it("breaks a base cycle in the downward walk", () => {
     const ordered = orderStack(context, [
-      { number: context.number, headRefName: "a", baseRefName: "b" },
-      { number: parsePrNumber(7), headRefName: "b", baseRefName: "a" },
+      { number: context.number, headRefName: "a", baseRefName: "b", isCrossRepository: false },
+      { number: parsePrNumber(7), headRefName: "b", baseRefName: "a", isCrossRepository: false },
     ]);
     const numbers = ordered.map((item) => Number(item.number));
     expect(numbers).toEqual([7, 42]);
@@ -457,8 +519,8 @@ describe("context and stack discovery", () => {
 
   it("never attaches a head-equals-base PR as a stack child", () => {
     const ordered = orderStack(context, [
-      { number: context.number, headRefName: "main", baseRefName: "trunk" },
-      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+      { number: context.number, headRefName: "main", baseRefName: "trunk", isCrossRepository: false },
+      { number: parsePrNumber(99), headRefName: "main", baseRefName: "main", isCrossRepository: true },
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([42]);
   });
@@ -477,8 +539,8 @@ describe("context and stack discovery", () => {
       const ordered = orderStack(
         { owner: "o", repo: "r", number: parsePrNumber(10) },
         [
-          { number: parsePrNumber(10), headRefName: "feature", baseRefName: "main" },
-          { number: parsePrNumber(99), headRefName: "main", baseRefName: "main" },
+          { number: parsePrNumber(10), headRefName: "feature", baseRefName: "main", isCrossRepository: false },
+          { number: parsePrNumber(99), headRefName: "main", baseRefName: "main", isCrossRepository: true },
         ]
       );
       console.log(ordered.map((item) => Number(item.number)).join(","));
