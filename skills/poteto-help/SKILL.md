@@ -72,12 +72,12 @@ The default answer is `/poteto-mode`, which runs most of the others when its ste
 | Understand a change or subsystem, explained plainly | [`/teach`](<pstack>/teach/SKILL.md) |
 | Catch up on their own recent work on a topic | [`/recall`](<pstack>/recall/SKILL.md) |
 | Catch up on what changed in this chat since their last message, in plain words and small visuals, with every item waiting on them listed and decidable from the reply alone | [`/ketchup`](<pstack>/ketchup/SKILL.md) |
-| Catch up like `/ketchup`, in a short silent video of slides, with the waiting calls as text under it | [`/ketchup-video`](<pstack>/ketchup-video/SKILL.md) |
+| Catch up like `/ketchup`, in a short subtitled video of slides, with the waiting calls as text under it | [`/ketchup-video`](<pstack>/ketchup-video/SKILL.md) |
 | Know what a small diff could break outside itself | [`/blast-radius`](<pstack>/blast-radius/SKILL.md) |
 | Settle types and module shape before code that crosses a function boundary | [`/architect`](<pstack>/architect/SKILL.md) |
 | Get several attempts at one brief, merged into the best one | [`/arena`](<pstack>/arena/SKILL.md) |
 | Run parallel checks over slices, or race workers, each in its own worktree | [`/swarm`](<pstack>/swarm/SKILL.md) |
-| Have different models review a diff and try to break it | [`/interrogate`](<pstack>/interrogate/SKILL.md) |
+| Have different models try to break a diff, keeping only findings a run proves | [`/interrogate`](<pstack>/interrogate/SKILL.md) |
 | Fix a bug test-first when a cheap local test exists | [`/tdd`](<pstack>/tdd/SKILL.md) |
 | Apply TypeScript rules to `.ts` or `.tsx` work | [`/typescript-best-practices`](<pstack>/typescript-best-practices/SKILL.md) |
 | Strip comments before review, using a reviewer that didn't write them | [`/no-comments`](<pstack>/no-comments/SKILL.md) |
@@ -125,7 +125,7 @@ Playbooks are step lists inside `/poteto-mode`, not skills, so they have no slas
 - "land the stack" runs Shipping.
 - "take over this branch" runs Session pickup.
 - "pause safely" runs Pause safely.
-- "full autopilot on this queue" runs Autopilot-full. "stack them, don't ship" runs Autopilot-stack.
+- "full autopilot on this queue" runs Autopilot-full. "autopilot, don't merge" runs Autopilot-stack.
 - "run the eval playbook" runs Eval.
 
 Without `/poteto-mode`, a phrase such as "babysit this pr" can start another installed skill for the same job instead. Say you are running the Babysit playbook when that happens. The Playbooks section of [`poteto-mode`](<pstack>/poteto-mode/SKILL.md) lists every playbook and when it applies.
