@@ -35,9 +35,9 @@
         logTasks: false
         # How long the resolved candidate catalogue is reused.
         catalogTtlMs: 300000
-        # A route that failed at request time is skipped for this long, and the
-        # child is retried onto the next candidate at most this many times.
+        # Skip permanent route failures for this long on later input claims.
         quarantineMs: 600000
+        # Retry transient failures on the same prepared route at most this often.
         maxRouteRetries: 2
         # Cap on the classification text, in characters. The task region is
         # taken from the delegate brief; a longer brief is truncated.

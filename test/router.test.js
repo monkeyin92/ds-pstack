@@ -50,6 +50,16 @@ function fakeContext(options = {}) {
     },
     /** Fire one waterfall event, awaiting the whole chain. */
     async waterfall(event, payload, base) {
+      if (event === 'agent/request') {
+        const agent = payload.agent
+        if (agent.model === undefined) {
+          let selected = { ...base }
+          agent.model = { current: () => ({ ...selected }), select: value => { selected = { ...value } } }
+          await ctx.waterfall('agent/created', { agent, signal: payload.signal }, undefined)
+        }
+        ctx.emit('agent/inbox/claimed', { agent, message: { role: 'tool', content: [] } })
+        base = { ...base, ...agent.model.current() }
+      }
       const list = listeners.get(event) ?? []
       let index = 0
       const next = async () => {
@@ -393,7 +403,7 @@ describe('router: choosing a child route', () => {
     assert.equal(result.model, 'group/claude-opus-5-5')
   })
 
-  it('quarantines a route that failed and retries onto the next candidate', async () => {
+  it('quarantines an auth failure without changing the prepared step', async () => {
     const { ctx } = routed(pool, catalogue)
     const child = fakeAgent('child-10', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
     const routedCall = await delegate(ctx, child, base, 'Review this diff and find blind spots')
@@ -401,8 +411,8 @@ describe('router: choosing a child route', () => {
     const action = await ctx.waterfall('agent/request-error', {
       agent: child, turn: 1, step: 1, provider: 'example-provider', failure: { code: 'AUTH' }, signal: new AbortController().signal,
     }, undefined)
-    assert.deepEqual(action, { kind: 'retry' })
-    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    assert.equal(action, undefined)
+    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 2, step: 2, signal: new AbortController().signal }, base)
     assert.equal(retried.model, 'group/deepseek-v4-1-flash')
   })
 })
@@ -705,11 +715,11 @@ describe('router: defects found in adversarial review', () => {
     const { ctx } = routed(pool, catalogue, { rolesPath })
     const child = fakeAgent('c6', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
     await delegate(ctx, child, base, 'Review this diff and find blind spots')
-    // The pinned route fails, so the retry must move to another candidate.
+    // A new turn must skip the failed pin; the failed step is not rerouted.
     await ctx.waterfall('agent/request-error', {
       agent: child, turn: 1, step: 1, provider: 'example-provider', failure: { code: 'AUTH' }, signal: new AbortController().signal,
     }, undefined)
-    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 2, step: 2, signal: new AbortController().signal }, base)
     assert.equal(retried.model, 'group/deepseek-v4-1-flash')
   })
 })
@@ -793,6 +803,7 @@ describe('router: coverage for defects 3, 5, 8, 11 and the orphan-parent regress
     // The abort must not be cached as "no metadata": the child falls back now,
     // and a later request resolves again rather than reusing a degraded catalogue.
     assert.deepEqual(first, base)
+    await ctx.waterfall('agent/pre-step', { agent: child, messages: [], signal: new AbortController().signal }, undefined)
     const second = await ctx.waterfall('agent/request', {
       agent: child, turn: 1, step: 2, signal: new AbortController().signal,
     }, base)
@@ -1082,13 +1093,10 @@ describe('failure recovery: retry budget and journal rotation', () => {
     await delegate(ctx, child, base, 'Review this diff and find blind spots')
     const fail = () => ctx.waterfall('agent/request-error', {
       agent: child, turn: 1, step: 1, provider: 'magpie',
-      failure: { code: 'AUTH', status: 401 }, signal: new AbortController().signal,
+      failure: { code: 'TIMEOUT', status: 504 }, signal: new AbortController().signal,
     }, undefined)
     assert.deepEqual(await fail(), { kind: 'retry' })
-    // The loop re-issues the request after a retry, which produces a fresh
-    // decision; the next failure of that route is the one that exhausts the
-    // budget. Modelling the real loop matters: without the intermediate
-    // request there is no cached route to attribute a failure to.
+    // A transient retry keeps the same route and spends the same step budget.
     await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
     // Budget spent: this failure must not ask for another retry.
     assert.equal(await fail(), undefined)

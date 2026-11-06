@@ -90,7 +90,9 @@ To check models, open Settings, find Subagent model selection, enable it, and se
 
 ## How a child's route is chosen
 
-Every delegated child makes a model request. Before the first one, the router:
+The router resolves model metadata during agent creation. It selects the route synchronously when DSH claims the child's input, before DSH fixes the step's model, tools, and system prompt. It never changes the route in `agent/request`.
+
+Before the first request, the router:
 
 1. reads the delegation prompt, which is the brief the parent wrote;
 2. classifies the work into one of eight intents (`planning`, `coding`, `debugging`, `review`, `research`, `analysis`, `writing`, `mechanical`) and reads its difficulty;
@@ -104,7 +106,7 @@ Three rules bound the guess:
 
 - **An explicit request wins.** A parent that passes `provider`/`model`/`reasoning_effort` is left alone, including a skill that puts those fields on the delegation. The router only fills a choice nobody made. A pin in `~/.dsh/ds-pstack-roles.json` is a different decision: the router applies it, and it wins over classification.
 - **The pool is the authority.** The router never selects a route outside the checked set.
-- **Routing never breaks delegation.** No checked pool, an unreadable subagent-model setting, no task text, a catalogue error, or no usable checked route leaves the child on the route it inherited. A failed routed request is retried, up to `maxRouteRetries`. A route-level failure is quarantined so the next choice skips it. Once retries are exhausted, that request fails. The journal says which happened.
+- **Routing never breaks delegation.** No checked pool, an unreadable subagent-model setting, no task text, a catalogue error, or no usable checked route leaves the child on the route it inherited. A transient routed failure is retried on the same prepared route, up to `maxRouteRetries`. A route-level failure is quarantined and reported to the caller without an automatic cross-model retry. A later input claim selects another eligible route or restores the inherited route. The journal says which happened. Metadata also refreshes during `agent/pre-step` for later claims, so a changed pool or a failed preload can recover without recreating the child. The already prepared step is unchanged.
 
 ### Classification is deterministic
 
@@ -159,4 +161,4 @@ pstack is MIT licensed by Lauren Tan. Its license is kept in [LICENSE.pstack](LI
 node --test "test/*.test.js"
 ```
 
-99 tests cover classification and its positional weighting, delegate-preamble stripping, path stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `bun run typecheck` and `bash -n`.
+The Node tests cover prepared-step model selection, follow-up requests, live-pool changes, cancellation, and classification and its positional weighting, delegate-preamble stripping, path stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `bun run typecheck` and `bash -n`.
