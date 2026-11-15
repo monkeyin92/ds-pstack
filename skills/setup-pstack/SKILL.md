@@ -62,10 +62,6 @@ perf-issue
 hillclimb
 judgment and prose
 hardest tasks
-how explorer
-how explainer
-why investigators
-why synthesizer
 reflect tooling
 reflect judgment
 arena runners
@@ -81,10 +77,10 @@ Several roles share one intent, which is why the router resolves a role name thr
 
 - `coding` — `feature`, `refactoring`, `swarm workers`
 - `debugging` — `bug-fix`, `perf-issue`
-- `analysis` — `hillclimb`, `why synthesizer`, `reflect tooling`
-- `writing` — `judgment and prose`, `how explainer`
+- `analysis` — `hillclimb`, `reflect tooling`
+- `writing` — `judgment and prose`
 - `planning` — `hardest tasks`, `arena runners`, `architect runners`
-- `research` — `how explorer`, `why investigators`
+- `research` — no pstack role maps here. The router still picks it from the task text, and an intent id can be pinned directly.
 - `review` — `reflect judgment`, `arena cross-judge pool`, `interrogate reviewers`
 
 Two roles in one group cannot carry different routes. If the user asks for that, explain the grouping and offer a different role for one of them, or leave both unpinned so the router decides. The router keeps the first pin it reads and ignores a later conflicting one with a warning in `~/.dsh/ds-pstack-router.jsonl`; it does not silently merge them. Write one entry per intent so the file never contains a pin the router will drop.

@@ -229,11 +229,18 @@ describe('role mapping', () => {
     assert.equal(intentForRole('swarm workers'), 'coding')
     assert.equal(intentForRole('interrogate reviewers'), 'review')
     assert.equal(intentForRole('hardest tasks'), 'planning')
-    assert.equal(intentForRole('how explorer'), 'research')
+    assert.equal(intentForRole('reflect tooling'), 'analysis')
   })
 
   it('ignores an unknown role rather than guessing', () => {
     assert.equal(intentForRole('how critics'), undefined)
+  })
+
+  it('no longer maps the retired how and why roles', () => {
+    assert.equal(intentForRole('how explorer'), undefined)
+    assert.equal(intentForRole('how explainer'), undefined)
+    assert.equal(intentForRole('why investigators'), undefined)
+    assert.equal(intentForRole('why synthesizer'), undefined)
   })
 })
 
