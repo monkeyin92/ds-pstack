@@ -45,7 +45,7 @@ If cost is the worry, say where the tokens go and how to spend fewer. pstack spe
 
 This package is ds-pstack, the DeepSeek Harness port of pstack. The contract that maps every Cursor name to its Harness name is at `<pstack>/../docs/harness/deepseek-harness.md`. Read it before explaining any step that looks Cursor-shaped.
 
-Other tools can read the skills, because they use the Agent Skills format. But most workflow skills, including `/poteto-mode`, `/how`, `/why`, and `/teach`, spawn subagents with per-role routes, and a step that needs a Cursor-only feature, such as Bugbot or Automations, is skipped with a one-line note.
+Other tools can read the skills, because they use the Agent Skills format. But most workflow skills, including `/poteto-mode`, `/how`, and `/teach`, spawn subagents, some with per-role routes, and a step that needs a Cursor-only feature, such as Bugbot or Automations, is skipped with a one-line note.
 
 ## Start a task with `/poteto-mode`
 

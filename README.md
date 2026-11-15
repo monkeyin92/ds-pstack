@@ -137,7 +137,7 @@ Run `/setup-pstack`. It reads your checked pool, asks for a budget, and writes `
 }
 ```
 
-Keys are pstack role names from the mode skill (`feature`, `bug-fix`, `how explorer`, `swarm workers`, `interrogate reviewers`, `arena runners`, and the rest), or an intent id directly. A value is a full `provider/model` route and an optional `@ effort`.
+Keys are pstack role names from the mode skill (`feature`, `bug-fix`, `reflect tooling`, `swarm workers`, `interrogate reviewers`, `arena runners`, and the rest), or an intent id directly. A value is a full `provider/model` route and an optional `@ effort`.
 
 A pin wins over classification, which is what letting a human decide means. A pin whose route is no longer checked is treated as stale and ignored rather than sent, so unchecking a model also unpins it.
 
