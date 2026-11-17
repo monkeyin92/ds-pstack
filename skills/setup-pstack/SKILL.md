@@ -17,7 +17,7 @@ The pool is the model list checked under Settings, Subagent model selection. Rea
 
 ### 2. Load current state
 
-If `~/.dsh/ds-pstack-roles.json` already exists, read it and treat its `budget` and its `intents` values as the current choices. Otherwise start from the role list in step 5 with no pins, which means the router decides every role from the pool. An intent whose id is not in step 5, such as `how critics`, is from a retired role. Drop it.
+If `~/.dsh/ds-pstack-roles.json` already exists, read it and treat its `budget` and its `intents` values as the current choices. Otherwise start from the role list in step 5 with no pins, which means the router decides every role from the pool. An intent whose id is not in step 5, such as `how critics`, `hardest tasks`, `reflect tooling`, `reflect judgment`, or `architect runners`, is from a retired role. Drop it.
 
 ### 3. Budget, map, and confirm
 
@@ -61,27 +61,23 @@ bug-fix
 perf-issue
 hillclimb
 judgment and prose
-hardest tasks
-reflect tooling
-reflect judgment
 arena runners
 arena cross-judge pool
 swarm workers
-architect runners
 interrogate reviewers
 ```
 
-Each code playbook reads its own id (`feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`). The hardest changes read `hardest tasks`, and prose and judgment read `judgment and prose`. A role with no entry is routed by the router from the pool, at the budget recorded above.
+Each code playbook reads its own id (`feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`). Prose and judgment read `judgment and prose`. A role with no entry is routed by the router from the pool, at the budget recorded above.
 
 Several roles share one intent, which is why the router resolves a role name through its intent. A pin is stored per intent, so pinning any role in a group pins the whole group. Say this out loud when the user pins one, so a pin is not a surprise later. The groups are:
 
 - `coding` — `feature`, `refactoring`, `swarm workers`
 - `debugging` — `bug-fix`, `perf-issue`
-- `analysis` — `hillclimb`, `reflect tooling`
+- `analysis` — `hillclimb`
 - `writing` — `judgment and prose`
-- `planning` — `hardest tasks`, `arena runners`, `architect runners`
+- `planning` — `arena runners`
 - `research` — no pstack role maps here. The router still picks it from the task text, and an intent id can be pinned directly.
-- `review` — `reflect judgment`, `arena cross-judge pool`, `interrogate reviewers`
+- `review` — `arena cross-judge pool`, `interrogate reviewers`
 
 Two roles in one group cannot carry different routes. If the user asks for that, explain the grouping and offer a different role for one of them, or leave both unpinned so the router decides. The router keeps the first pin it reads and ignores a later conflicting one with a warning in `~/.dsh/ds-pstack-router.jsonl`; it does not silently merge them. Write one entry per intent so the file never contains a pin the router will drop.
 
