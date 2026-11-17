@@ -228,8 +228,8 @@ describe('role mapping', () => {
   it('maps every pstack role line onto an intent', () => {
     assert.equal(intentForRole('swarm workers'), 'coding')
     assert.equal(intentForRole('interrogate reviewers'), 'review')
-    assert.equal(intentForRole('hardest tasks'), 'planning')
-    assert.equal(intentForRole('reflect tooling'), 'analysis')
+    assert.equal(intentForRole('arena runners'), 'planning')
+    assert.equal(intentForRole('hillclimb'), 'analysis')
   })
 
   it('ignores an unknown role rather than guessing', () => {
@@ -241,6 +241,12 @@ describe('role mapping', () => {
     assert.equal(intentForRole('how explainer'), undefined)
     assert.equal(intentForRole('why investigators'), undefined)
     assert.equal(intentForRole('why synthesizer'), undefined)
+  })
+
+  it('no longer maps the retired reflect, architect, and hardest-tasks roles', () => {
+    for (const role of ['hardest tasks', 'reflect tooling', 'reflect judgment', 'architect runners']) {
+      assert.equal(intentForRole(role), undefined)
+    }
   })
 })
 
@@ -1030,20 +1036,19 @@ describe('role pins: category spread and conflicts (M2)', () => {
   it('keeps the first declared pin and reports the conflict rather than letting key order decide', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-conflict-'))
     const path = join(dir, 'roles.json')
-    // Three roles map to `review`; the last used to silently overwrite the rest.
+    // Two roles map to `review`; the last used to silently overwrite the first.
     writeFileSync(path, JSON.stringify({
       budget: 'large',
       intents: {
         'interrogate reviewers': 'p/strong',
-        'reflect judgment': 'p/cheap',
         'arena cross-judge pool': 'p/mid',
       },
     }))
     const roles = readRoles(path)
     assert.equal(roles.pins.get('review').route, 'p/strong')
-    assert.equal(roles.conflicts.length, 2)
-    assert.deepEqual(roles.conflicts.map(c => c.droppedRole), ['reflect judgment', 'arena cross-judge pool'])
-    assert.deepEqual(roles.roles.get('review'), ['interrogate reviewers', 'reflect judgment', 'arena cross-judge pool'])
+    assert.equal(roles.conflicts.length, 1)
+    assert.deepEqual(roles.conflicts.map(c => c.droppedRole), ['arena cross-judge pool'])
+    assert.deepEqual(roles.roles.get('review'), ['interrogate reviewers', 'arena cross-judge pool'])
   })
 
   it('does not report a conflict when two roles agree on the same route', () => {
@@ -1064,7 +1069,7 @@ describe('role pins: category spread and conflicts (M2)', () => {
     const journalPath = join(dir, 'j.jsonl')
     writeFileSync(rolesPath, JSON.stringify({
       budget: 'large',
-      intents: { 'interrogate reviewers': 'p/strong', 'reflect judgment': 'p/cheap' },
+      intents: { 'interrogate reviewers': 'p/strong', 'arena cross-judge pool': 'p/cheap' },
     }))
     const ctx = fakeContext({ services: { agents: { get: () => undefined } } })
     applyRouter(ctx, { rolesPath, logPath: journalPath })

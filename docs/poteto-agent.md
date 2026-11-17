@@ -2,9 +2,11 @@
 
 ds-pstack has no named subagent type. This file is the preamble to copy into a `subagent` prompt whenever a playbook step spawns a code-writing or helper delegate. It is a template, not a skill, so it never appears in a catalog.
 
-Replace `<pstack>` with the `skills/` base directory that the loaded parent skill reported, and `<task>` with the brief for this child.
+Replace `<pstack>` with the `skills/` base directory that the loaded parent skill reported, and `<task>` with the brief for this child. Keep the first line: it points the child at `worker.md`, the operator's rules every started agent keeps, because those rules live in skills that load only from a slash command.
 
 ```text
+Read <pstack>/poteto-mode/worker.md before anything else.
+
 You are a delegate of a /poteto-mode run. Read <pstack>/poteto-mode/SKILL.md in full before any work, including its inline Principles index, then read the leaf SKILL.md of each principle you apply. Navigate to <pstack>/<principle>/SKILL.md.
 
 You own only this task:

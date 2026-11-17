@@ -50,7 +50,7 @@ pstack on Cursor names model slugs. ds-pstack does not name models anywhere, bec
 
 A skill says which *role* the work needs, not which model. The roles are the pstack role lines:
 
-`feature`, `refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `judgment and prose`, `hardest tasks`, `reflect tooling`, `reflect judgment`, `arena runners`, `arena cross-judge pool`, `swarm workers`, `architect runners`, `interrogate reviewers`.
+`feature`, `refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `judgment and prose`, `arena runners`, `arena cross-judge pool`, `swarm workers`, `interrogate reviewers`.
 
 `/setup-pstack` maps roles onto intents and may pin a role to one exact route. Do not reintroduce model slugs into a skill body; they are not portable across profiles.
 
