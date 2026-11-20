@@ -50,11 +50,13 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
     claim(message = { role: 'user', content: [{ type: 'text', text: 'Implement a new endpoint' }] }) {
       for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
     },
-    async step(text = 'Implement a new endpoint', afterPrepare = () => {}, beforeDispatch = () => {}) {
-      const message = { role: 'user', content: [{ type: 'text', text }] }
-      for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
+    toolResult() { for (const callback of listeners.get('tools/result') ?? []) callback({ agent }, {}) },
+    async step(text = 'Implement a new endpoint', afterPrepare = () => {}, beforeDispatch = () => {}, duringAssembly = () => {}) {
+      const messages = text === null ? [] : [{ role: 'user', content: [{ type: 'text', text }] }]
+      for (const message of messages) this.claim(message)
       const prepared = agent.model.current()
-      await waterfall('agent/pre-step', { agent, messages: [message], modelSelection: prepared }, { kind: 'enter', messages: [message] })
+      duringAssembly()
+      await waterfall('agent/pre-step', { agent, messages, modelSelection: prepared }, { kind: 'enter', messages })
       afterPrepare()
       const proposed = await waterfall('agent/request', { agent }, prepared)
       assert.deepEqual(proposed, prepared, 'request hook must not change the prepared model selection')
@@ -171,6 +173,32 @@ test('a remount restores the inherited selection when the routed model is unchec
   r.remount()
   r.uncheck()
   assert.deepEqual(await r.step(), r.agent.options)
+  r.dispose()
+})
+
+test('a remount during tools keeps a still-checked selection on an empty-inbox continuation', async () => {
+  const r = runtime()
+  await r.create()
+  const selected = await r.step()
+  r.remount()
+  r.toolResult()
+  assert.deepEqual(await r.step(null), selected)
+  r.uncheck()
+  r.toolResult()
+  assert.deepEqual(await r.step(null), r.agent.options)
+  r.dispose()
+})
+
+test('multiple manual switches during tool assembly cannot authorize the frozen routed request', async () => {
+  const r = runtime()
+  await r.create()
+  const manual = { provider: 'local', model: 'manual' }
+  await assert.rejects(r.step('Implement a new endpoint', undefined, undefined, () => {
+    r.uncheck()
+    r.agent.model.select(r.agent.options)
+    r.agent.model.select(manual)
+  }), /unchecked/i)
+  assert.deepEqual(await r.step(), manual)
   r.dispose()
 })
 
