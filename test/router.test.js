@@ -23,7 +23,8 @@ import {
   modelTraits,
   scoreModel,
 } from '../lib/classify.js'
-import { apply as applyRouter, normalizeConfig, readRoles, redactSecrets, taskOfMessages } from '../lib/router.js'
+import { mountRouter, normalizeConfig, readRoles, redactSecrets, taskOfMessages } from '../lib/router.js'
+import { appendPluginRecord, sessionLog, sessionModel } from './session-fixture.js'
 import { apply as applySkills, candidateOf, parseFrontmatter } from '../lib/skills.js'
 
 /** Build a minimal fake Cordis context that records what the plugin registered. */
@@ -50,16 +51,6 @@ function fakeContext(options = {}) {
     },
     /** Fire one waterfall event, awaiting the whole chain. */
     async waterfall(event, payload, base) {
-      if (event === 'agent/request') {
-        const agent = payload.agent
-        if (agent.model === undefined) {
-          let selected = { ...base }
-          agent.model = { current: () => ({ ...selected }), select: value => { selected = { ...value } } }
-          await ctx.waterfall('agent/created', { agent, signal: payload.signal }, undefined)
-        }
-        ctx.emit('agent/inbox/claimed', { agent, message: { role: 'tool', content: [] } })
-        base = { ...base, ...agent.model.current() }
-      }
       const list = listeners.get(event) ?? []
       let index = 0
       const next = async () => {
@@ -82,8 +73,10 @@ function fakeContext(options = {}) {
 
 /** A fake agent with a durable header and creation options. */
 function fakeAgent(id, header = {}, agentOptions = {}) {
-  return { id, session: { header: { id, version: 1, createdAt: 0, isSeeded: false, ...header } }, options: agentOptions }
+  return { id, session: sessionLog({ id, version: 1, createdAt: 0, isSeeded: false, ...header }), options: agentOptions }
 }
+
+const applyRouter = (ctx, config) => mountRouter(ctx, config, appendPluginRecord)
 
 /** A checked-model-service stand-in matching `ctx.subagentModelSelection.current()`. */
 function modelSelection(allowedModels) {
@@ -303,11 +296,50 @@ function routed(pool, catalogue, options = {}) {
   return { ctx, journalPath: join(dir, 'journal.jsonl') }
 }
 
-/** Run one full delegation: capture the task, then answer its first request. */
-async function delegate(ctx, child, base, task) {
-  await ctx.waterfall('agent/pre-step', { agent: child, messages: [{ role: 'user', content: [{ type: 'text', text: task }] }], turn: 1, step: 1, signal: new AbortController().signal }, undefined)
-  return await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+async function createChild(ctx, child, base, signal) {
+  if (child.model !== undefined) return
+  child.model = sessionModel(child.session, base)
+  await ctx.waterfall('agent/created', { agent: child, signal }, undefined)
 }
+
+async function step(ctx, agent, messages) {
+  const signal = new AbortController().signal
+  for (const message of messages) ctx.emit('agent/inbox/claimed', { agent, message })
+  const prepared = agent.model.current()
+  await ctx.waterfall('agent/pre-step', { agent, messages, signal, modelSelection: prepared }, undefined)
+  return ctx.waterfall('agent/request', { agent, signal }, prepared)
+}
+
+async function delegate(ctx, child, base, task) {
+  await createChild(ctx, child, base)
+  return step(ctx, child, [{ role: 'user', content: [{ type: 'text', text: task }] }])
+}
+
+it('keeps the new pool metadata for the first claim when an older child preload finishes last', async () => {
+  const first = { provider: 'local', model: 'one' }
+  const second = { provider: 'local', model: 'two' }
+  const checked = [first]
+  const metadata = fakeLlm([{ ...first, name: 'small flash' }, { ...second, name: 'Claude Opus', efforts: ['high'] }])
+  const release = Promise.withResolvers()
+  let holdFirst = true
+  const ctx = fakeContext({ services: {
+    subagentModelSelection: modelSelection(checked),
+    llm: { async resolveModelInfo(...args) {
+      if (holdFirst) { holdFirst = false; await release.promise }
+      return metadata.resolveModelInfo(...args)
+    } },
+  } })
+  applyRouter(ctx, { rolesPath: '', logPath: '' })
+  const older = fakeAgent('older', { origin: 'subagent' })
+  const newer = fakeAgent('newer', { origin: 'subagent' })
+  const creatingOlder = createChild(ctx, older, first)
+  checked.push(second)
+  await createChild(ctx, newer, first)
+  release.resolve()
+  await creatingOlder
+  const request = await delegate(ctx, newer, first, 'Review this diff and find blind spots')
+  assert.deepEqual(request, { ...second, reasoningEffort: 'high' })
+})
 
 describe('router: choosing a child route', () => {
   const pool = [
@@ -349,7 +381,7 @@ describe('router: choosing a child route', () => {
     const { ctx } = routed(pool, catalogue)
     const child = fakeAgent('child-4', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
     const first = await delegate(ctx, child, base, 'Review this diff and find blind spots')
-    const second = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, first)
+    const second = await step(ctx, child, [])
     assert.deepEqual(second, first)
   })
 
@@ -425,7 +457,7 @@ describe('router: choosing a child route', () => {
       agent: child, turn: 1, step: 1, provider: 'example-provider', failure: { code: 'AUTH' }, signal: new AbortController().signal,
     }, undefined)
     assert.equal(action, undefined)
-    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 2, step: 2, signal: new AbortController().signal }, base)
+    const retried = await delegate(ctx, child, base, 'Continue the review')
     assert.equal(retried.model, 'group/deepseek-v4-1-flash')
   })
 })
@@ -525,11 +557,14 @@ describe('router: fork children', () => {
 
   it('leaves a forked child on its inherited route so prefix reuse survives', async () => {
     const { ctx, journalPath } = routed(pool, catalogue)
+    let queries = 0
+    ctx.get('llm').resolveModelInfo = async () => { queries += 1 }
     const child = fakeAgent('fork-1', { isSeeded: true, parentSession: 'root', delegationDepth: 1 })
     const result = await delegate(ctx, child, base, 'Review this diff and find blind spots')
     assert.deepEqual(result, base)
     const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
     assert.ok(events.some(event => event.event === 'skip' && event.reason === 'forked-child'))
+    assert.equal(queries, 0)
   })
 
   it('routes a forked child when the operator opts in', async () => {
@@ -644,7 +679,7 @@ describe('router: defects found in adversarial review', () => {
     assert.ok(events.some(event => event.event === 'decision' && event.pinEffortDropped === true))
   })
 
-  it('does not reuse a cached decision for a route the user unchecked', async () => {
+  it('does not send an unchecked model the next request after tools finish with an empty inbox', async () => {
     let checked = [...pool]
     const ctx = fakeContext({
       services: {
@@ -660,7 +695,8 @@ describe('router: defects found in adversarial review', () => {
     assert.equal(first.model, 'group/claude-opus-5-5')
     // The user unchecks the strong model while the child is still running.
     checked = [{ provider: 'example-provider', model: 'group/deepseek-v4-1-flash' }]
-    const second = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, first)
+    ctx.emit('tools/result', { agent: child })
+    const second = await step(ctx, child, [])
     assert.equal(second.model, 'group/deepseek-v4-1-flash')
   })
 
@@ -668,7 +704,8 @@ describe('router: defects found in adversarial review', () => {
     const { ctx, journalPath } = routed(pool, catalogue)
     const child = fakeAgent('c3', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
     // First request: no task captured yet, so nothing is routed.
-    const first = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    await createChild(ctx, child, base)
+    const first = await step(ctx, child, [])
     assert.deepEqual(first, base)
     // The prompt arrives on the next step; the child must still be routable.
     const second = await delegate(ctx, child, first, 'Review this diff and find blind spots')
@@ -690,7 +727,7 @@ describe('router: defects found in adversarial review', () => {
     const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))
     assert.ok(!events.some(event => event.event === 'route-failed'))
     // The child keeps its route.
-    const again = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, base)
+    const again = await step(ctx, child, [])
     assert.equal(again.model, 'group/claude-opus-5-5')
   })
 
@@ -732,7 +769,7 @@ describe('router: defects found in adversarial review', () => {
     await ctx.waterfall('agent/request-error', {
       agent: child, turn: 1, step: 1, provider: 'example-provider', failure: { code: 'AUTH' }, signal: new AbortController().signal,
     }, undefined)
-    const retried = await ctx.waterfall('agent/request', { agent: child, turn: 2, step: 2, signal: new AbortController().signal }, base)
+    const retried = await delegate(ctx, child, base, 'Continue the review')
     assert.equal(retried.model, 'group/deepseek-v4-1-flash')
   })
 })
@@ -809,17 +846,13 @@ describe('router: coverage for defects 3, 5, 8, 11 and the orphan-parent regress
     const dir = mkdtempSync(join(tmpdir(), 'ds-pstack-abort-'))
     applyRouter(ctx, { rolesPath: join(dir, 'none.json'), logPath: join(dir, 'j.jsonl') })
     const child = fakeAgent('c-abort', { origin: 'subagent', delegationDepth: 1, parentSession: 'root' })
-    await ctx.waterfall('agent/pre-step', {
-      agent: child, messages: [{ role: 'user', content: [{ type: 'text', text: 'Review this diff and find blind spots' }] }], signal: controller.signal,
-    }, undefined)
-    const first = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: controller.signal }, base)
+    await createChild(ctx, child, base, controller.signal)
+    const first = child.model.current()
     // The abort must not be cached as "no metadata": the child falls back now,
     // and a later request resolves again rather than reusing a degraded catalogue.
     assert.deepEqual(first, base)
-    await ctx.waterfall('agent/pre-step', { agent: child, messages: [], signal: new AbortController().signal }, undefined)
-    const second = await ctx.waterfall('agent/request', {
-      agent: child, turn: 1, step: 2, signal: new AbortController().signal,
-    }, base)
+    await step(ctx, child, [])
+    const second = await delegate(ctx, child, base, 'Review this diff and find blind spots')
     assert.equal(second.model, 'group/claude-opus-5-5')
     assert.ok(second.reasoningEffort !== undefined, 'a re-resolved route must carry an effort')
   })
@@ -962,7 +995,7 @@ describe('router: explicit decision is stable per child (M3)', () => {
     assert.equal(first.model, 'group/claude-opus-5-5')
     // The parent is re-routed (e.g. its own route failed and it fell back).
     parentRoute = { provider: 'example-provider', model: 'group/deepseek-v4-1-flash', reasoningEffort: 'max' }
-    const second = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 2, signal: new AbortController().signal }, first)
+    const second = await step(ctx, child, [])
     assert.equal(second.model, first.model)
     assert.equal(second.reasoningEffort, first.reasoningEffort)
   })
@@ -977,19 +1010,19 @@ describe('router: parent-task fallback is not frozen (M5)', () => {
   const base = { provider: 'example-provider', model: 'group/deepseek-v4-1-flash', reasoningEffort: 'max' }
 
   it('re-decides with the child own prompt after borrowing the parent task', async () => {
-    const { ctx } = routed(pool, catalogue)
+    const { ctx } = routed(pool, catalogue, { config: { scope: 'all' } })
     const parentId = 'root'
-    const parentTask = 'Rename the constant.'
+    const parentTask = 'Review this diff and find blind spots'
     const child = fakeAgent('m5', { origin: 'subagent', delegationDepth: 1, parentSession: parentId })
     // Only the parent has a captured task at first.
     await ctx.waterfall('agent/pre-step', {
       agent: fakeAgent(parentId), messages: [{ role: 'user', content: [{ type: 'text', text: parentTask }] }], signal: new AbortController().signal,
     }, undefined)
-    const borrowed = await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
-    // The child's own prompt now arrives and reads as review work; the borrowed
-    // decision must not have been cached.
-    const own = await delegate(ctx, child, borrowed, 'Review this diff and find blind spots')
-    assert.equal(own.model, 'group/claude-opus-5-5')
+    await createChild(ctx, child, base)
+    const borrowed = await step(ctx, child, [{ role: 'user', content: [] }])
+    assert.equal(borrowed.model, 'group/claude-opus-5-5')
+    const own = await delegate(ctx, child, borrowed, 'Rename the constant.')
+    assert.equal(own.model, 'group/deepseek-v4-1-flash')
   })
 })
 
@@ -1109,7 +1142,7 @@ describe('failure recovery: retry budget and journal rotation', () => {
     }, undefined)
     assert.deepEqual(await fail(), { kind: 'retry' })
     // A transient retry keeps the same route and spends the same step budget.
-    await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, base)
+    await ctx.waterfall('agent/request', { agent: child, turn: 1, step: 1, signal: new AbortController().signal }, child.model.current())
     // Budget spent: this failure must not ask for another retry.
     assert.equal(await fail(), undefined)
     const events = readFileSync(journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line))

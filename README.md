@@ -90,7 +90,7 @@ To check models, open Settings, find Subagent model selection, enable it, and se
 
 ## How a child's route is chosen
 
-The router resolves model metadata during agent creation. It selects the route synchronously when DSH claims the child's input, before DSH fixes the step's model, tools, and system prompt. It never changes the route in `agent/request`.
+The router preloads model metadata for routable agents. It selects the route when DSH claims the child's input and checks again when a tool finishes, before DSH fixes the next step's model, tools, and system prompt. A tool-only continuation does not need a synthetic inbox message. If the user unchecks a routed model after step preparation, the router refuses the request instead of changing its frozen configuration.
 
 Before the first request, the router:
 
@@ -100,13 +100,13 @@ Before the first request, the router:
 4. ranks the checked models for that intent and takes the best;
 5. snaps the effort onto one the chosen route actually advertises.
 
-The decision made from the child's own prompt is cached, so later requests from that subagent reuse it until the checked pool drops that route or the route fails. A guess borrowed from the parent task is not cached. The journal at `~/.dsh/ds-pstack-router.jsonl` records every decision and every skip.
+The decision made from the child's own prompt is cached, so later requests from that subagent reuse it until the checked pool drops that route or the route fails. A guess borrowed from the parent task is not cached. When the router changes a selection, it records the inherited and selected routes in the DSH session, not the model-visible conversation. After a remount it can restore its own selection without undoing a later manual change. Older, unmarked model selections are left alone. The optional journal at `~/.dsh/ds-pstack-router.jsonl` is not needed for recovery.
 
 Three rules bound the guess:
 
 - **An explicit request wins.** A parent that passes `provider`/`model`/`reasoning_effort` is left alone, including a skill that puts those fields on the delegation. The router only fills a choice nobody made. A pin in `~/.dsh/ds-pstack-roles.json` is a different decision: the router applies it, and it wins over classification.
 - **The pool is the authority.** The router never selects a route outside the checked set.
-- **Routing never breaks delegation.** No checked pool, an unreadable subagent-model setting, no task text, a catalogue error, or no usable checked route leaves the child on the route it inherited. A transient routed failure is retried on the same prepared route, up to `maxRouteRetries`. A route-level failure is quarantined and reported to the caller without an automatic cross-model retry. A later input claim selects another eligible route or restores the inherited route. The journal says which happened. Metadata also refreshes during `agent/pre-step` for later claims, so a changed pool or a failed preload can recover without recreating the child. The already prepared step is unchanged.
+- **Fallback and retries.** With no task or usable checked route, the router leaves the child on its inherited route. A transient failure can retry on the same still-checked route, up to `maxRouteRetries`. A route-level failure is quarantined without retrying the prepared step on a different model. Metadata refreshes during `agent/pre-step` for later steps; until the current pool's metadata is available, newly checked routes compete by model ID without an inferred effort.
 
 ### Classification is deterministic
 
@@ -161,4 +161,4 @@ pstack is MIT licensed by Lauren Tan. Its license is kept in [LICENSE.pstack](LI
 node --test "test/*.test.js"
 ```
 
-The Node tests cover prepared-step model selection, follow-up requests, live-pool changes, cancellation, and classification and its positional weighting, delegate-preamble stripping, path stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own 73-test Bun suite, and `.github/workflows/ci.yml` runs both plus `bun run typecheck` and `bash -n`.
+The Node tests cover prepared-step model selection, follow-up requests, live-pool changes, cancellation, and classification and its positional weighting, delegate-preamble stripping, path stripping, effort mapping, model ranking, pool enforcement, pin conflicts, fork protection, quarantine policy, privacy redaction, failure recovery, frontmatter parsing, and catalog publication. They run with no build step and no dependencies. The `skills/poteto-mode/scripts/` tooling has its own Bun suite, and `.github/workflows/ci.yml` runs both plus `bun run typecheck` and `bash -n`.

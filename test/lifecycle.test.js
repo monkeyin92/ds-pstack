@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
+import { appendPluginRecord, sessionLog, sessionModel } from './session-fixture.js'
 
-const { apply } = await import(process.env.PSTACK_ROUTER_TEST_PATH
+const router = await import(process.env.PSTACK_ROUTER_TEST_PATH
   ? pathToFileURL(process.env.PSTACK_ROUTER_TEST_PATH).href
   : '../lib/router.js')
 
 function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
   const listeners = new Map()
   const original = { provider: 'local', model: 'inherited' }
-  let selection = { ...original }
   let allowed = initialPool
   const parent = { options: original }
+  const session = sessionLog({ origin: 'subagent', parentSession: 'parent', delegationDepth: 1 })
   const agent = {
     id: 'child', options: original,
-    session: { header: { origin: 'subagent', parentSession: 'parent', delegationDepth: 1 } },
-    model: { current: () => ({ ...selection }), select: value => { selection = { ...value } } },
+    session, model: sessionModel(session, original),
   }
   const ctx = {
     logger: { info() {}, warn() {} },
@@ -39,18 +39,20 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
     const next = () => list[index++]?.(payload, next) ?? base
     return await next()
   }
-  const dispose = apply(ctx, { budget: 'medium', rolesPath: '', logPath: '' })
+  const mount = () => (router.mountRouter ?? router.apply)(ctx, { budget: 'medium', rolesPath: '', logPath: '' }, appendPluginRecord)
+  let dispose = mount()
   return {
-    agent, dispose,
+    agent, dispose() { dispose() }, remount() { dispose(); dispose = mount() },
     async create() { for (const callback of listeners.get('agent/created') ?? []) await callback({ agent }) },
     claim(message = { role: 'user', content: [{ type: 'text', text: 'Implement a new endpoint' }] }) {
       for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
     },
-    async step(text = 'Implement a new endpoint') {
+    async step(text = 'Implement a new endpoint', afterPrepare = () => {}) {
       const message = { role: 'user', content: [{ type: 'text', text }] }
       for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
       const prepared = agent.model.current()
-      await waterfall('agent/pre-step', { agent, messages: [message] }, { kind: 'enter', messages: [message] })
+      await waterfall('agent/pre-step', { agent, messages: [message], modelSelection: prepared }, { kind: 'enter', messages: [message] })
+      afterPrepare()
       const proposed = await waterfall('agent/request', { agent }, prepared)
       assert.deepEqual(proposed, prepared, 'request hook must not change the prepared model selection')
       return prepared
@@ -122,6 +124,70 @@ test('unchecking the pool removes the previously routed effort', async () => {
   await r.step()
   r.uncheck()
   assert.deepEqual(await r.step(), { provider: 'local', model: 'inherited' })
+  r.dispose()
+})
+
+test('refuses a routed request revoked after preparation rather than changing its frozen selection', async () => {
+  const r = runtime()
+  await r.create()
+  await assert.rejects(r.step('Implement a new endpoint', r.uncheck), /unchecked/i)
+  assert.deepEqual(await r.step(), r.agent.options)
+  r.dispose()
+})
+
+test('a manual switch for the next step does not authorize a revoked prepared request', async () => {
+  const r = runtime()
+  await r.create()
+  const manual = { provider: 'local', model: 'manual' }
+  await assert.rejects(r.step('Implement a new endpoint', () => {
+    r.uncheck()
+    r.agent.model.select(manual)
+  }), /unchecked/i)
+  assert.deepEqual(await r.step(), manual)
+  r.dispose()
+})
+
+test('a remount restores the inherited selection when the routed model is unchecked', async () => {
+  const r = runtime()
+  await r.create()
+  assert.equal((await r.step()).model, 'worker')
+  r.remount()
+  r.uncheck()
+  assert.deepEqual(await r.step(), r.agent.options)
+  r.dispose()
+})
+
+test('a remount preserves a user selection instead of reclaiming it for the checked pool', async () => {
+  const r = runtime()
+  await r.create()
+  assert.equal((await r.step()).model, 'worker')
+  r.remount()
+  const manual = { provider: 'other', model: 'explicit', reasoningEffort: 'low' }
+  r.agent.model.select(manual)
+  await r.refresh()
+  assert.deepEqual(await r.step(), manual)
+  r.uncheck()
+  assert.deepEqual(await r.step(), manual)
+  r.dispose()
+})
+
+test('manual changes away and back to the same model supersede the router ownership on replay', async () => {
+  const r = runtime()
+  await r.create()
+  const chosen = await r.step()
+  r.agent.model.select(r.agent.options)
+  r.agent.model.select(chosen)
+  r.remount()
+  r.uncheck()
+  assert.deepEqual(await r.step(), chosen)
+  r.dispose()
+})
+
+test('the first claim uses a model checked after an empty creation preload', async () => {
+  const r = runtime([])
+  await r.create()
+  r.check('newly-checked')
+  assert.deepEqual(await r.step(), { provider: 'local', model: 'newly-checked' })
   r.dispose()
 })
 
