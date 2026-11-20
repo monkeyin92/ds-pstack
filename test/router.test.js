@@ -76,7 +76,7 @@ function fakeAgent(id, header = {}, agentOptions = {}) {
   return { id, session: sessionLog({ id, version: 1, createdAt: 0, isSeeded: false, ...header }), options: agentOptions }
 }
 
-const applyRouter = (ctx, config) => mountRouter(ctx, config, appendPluginRecord)
+const applyRouter = (ctx, config) => mountRouter(ctx, config, appendPluginRecord, () => false)
 
 /** A checked-model-service stand-in matching `ctx.subagentModelSelection.current()`. */
 function modelSelection(allowedModels) {

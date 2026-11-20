@@ -21,7 +21,7 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
     logger: { info() {}, warn() {} },
     get(name) {
       return {
-        agents: { get: () => parent },
+        agents: new Map([['parent', parent], [agent.id, agent]]),
         subagentModelSelection: { current: () => ({ enabled: true, allowedModels: allowed }) },
         llm: { resolveModelInfo: async () => ({ reasoning: { efforts: [{ id: 'medium' }, { id: 'high' }], defaultEffort: 'medium' } }) },
       }[name]
@@ -39,7 +39,10 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
     const next = () => list[index++]?.(payload, next) ?? base
     return await next()
   }
-  const mount = () => (router.mountRouter ?? router.apply)(ctx, { budget: 'medium', rolesPath: '', logPath: '' }, appendPluginRecord)
+  const loopRequests = new WeakSet()
+  const mount = () => (router.mountRouter ?? router.apply)(
+    ctx, { budget: 'medium', rolesPath: '', logPath: '' }, appendPluginRecord, request => loopRequests.has(request),
+  )
   let dispose = mount()
   return {
     agent, dispose() { dispose() }, remount() { dispose(); dispose = mount() },
@@ -47,7 +50,7 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
     claim(message = { role: 'user', content: [{ type: 'text', text: 'Implement a new endpoint' }] }) {
       for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
     },
-    async step(text = 'Implement a new endpoint', afterPrepare = () => {}) {
+    async step(text = 'Implement a new endpoint', afterPrepare = () => {}, beforeDispatch = () => {}) {
       const message = { role: 'user', content: [{ type: 'text', text }] }
       for (const callback of listeners.get('agent/inbox/claimed') ?? []) callback({ agent, message })
       const prepared = agent.model.current()
@@ -55,10 +58,14 @@ function runtime(initialPool = [{ provider: 'local', model: 'worker' }]) {
       afterPrepare()
       const proposed = await waterfall('agent/request', { agent }, prepared)
       assert.deepEqual(proposed, prepared, 'request hook must not change the prepared model selection')
-      return prepared
+      beforeDispatch()
+      const request = { ...proposed, sessionId: agent.id }
+      loopRequests.add(request)
+      return waterfall('llm/stream', request, proposed)
     },
     async error(failure, signal) { return await waterfall('agent/request-error', { agent, provider: 'local', failure, signal }, undefined) },
     uncheck() { allowed = [] },
+    directStream(config) { return waterfall('llm/stream', { ...config, sessionId: agent.id }, config) },
     check(model) { allowed = [{ provider: 'local', model }] },
     async refresh() { await waterfall('agent/pre-step', { agent, messages: [] }, { kind: 'enter', messages: [] }) },
   }
@@ -144,6 +151,16 @@ test('a manual switch for the next step does not authorize a revoked prepared re
     r.agent.model.select(manual)
   }), /unchecked/i)
   assert.deepEqual(await r.step(), manual)
+  r.dispose()
+})
+
+test('a revocation during adapter preparation prevents the adapter stream from starting', async () => {
+  const r = runtime()
+  await r.create()
+  await assert.rejects(r.step('Implement a new endpoint', undefined, r.uncheck), /unchecked/i)
+  const direct = { provider: 'local', model: 'worker' }
+  assert.deepEqual(await r.directStream(direct), direct)
+  assert.deepEqual(await r.step(), r.agent.options)
   r.dispose()
 })
 
